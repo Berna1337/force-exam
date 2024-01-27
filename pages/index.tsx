@@ -1,5 +1,4 @@
 import Head from "next/head";
-import randomQuestions from "questions/randomQuestions";
 import StartCard from "../components/startCard";
 import { useState } from "react";
 import { useRouter } from "next/router";
