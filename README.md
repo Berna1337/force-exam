@@ -1,3 +1,11 @@
+## The Project
+This project is a simple web application that allows users to practice for their exams by taking practice exams on Force Exam. Force Exam allows you to take your study to the next level by providing you with the tools needed to create the ultimate practice exams.
+
+For this Force Exam uses JSON as the format of the exams and provides a simple but powerful editor to create the exams.
+
+Currently, Force Exam is in the early stages of development and is not ready for production use.
+
+
 This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
 
 ## Getting Started
