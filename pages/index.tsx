@@ -10,6 +10,10 @@ export default function Home() {
       <Head>
         <title>Force Exam</title>
         <meta name="description" content="The best way to study for your Exams!." />
+        <link
+          href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap"
+          rel="stylesheet"
+        />
         {/* <link rel="icon" href="/favicon.ico" /> */}
       </Head>
       <Box bg="gray.800" color="white" minHeight="100vh">
