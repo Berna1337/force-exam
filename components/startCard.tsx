@@ -52,20 +52,27 @@ export default function StartCard() {
     <Container maxW="2xl" bg="gray.800" color="white" centerContent p={6} borderRadius="2xl">
       <GradientTypewriterHeading as="h1">Force Exam</GradientTypewriterHeading>
 
-      <Text as="cite" fontStyle="italic" fontSize="lg" opacity={0.8} mb={6} mt="26px">
+      <Text as="cite" fontStyle="italic" fontSize="lg" opacity={0.8} mb={6} mt="26px" textAlign="center">
         The most powerful tool to study for your exams!
       </Text>
+
       <Box padding="4" maxW="md">
         <HStack spacing={4}>
-          <Tooltip label="View or Contribute to the Code on GitHub!" aria-label="A tooltip">
+          <Tooltip label="View or contribute to the project on GitHub!" aria-label="A tooltip">
             <Link href="https://github.com/Berna1337/force-exam" isExternal target="_blank">
-              <Button colorScheme="teal" variant="solid" leftIcon={<FontAwesomeIcon icon={faGithub} />} size="lg">
+              <Button
+                colorScheme="teal"
+                variant="solid"
+                size="lg"
+                leftIcon={<FontAwesomeIcon icon={faGithub} />}
+                fontFamily="'JetBrains Mono', monospace"
+              >
                 View on GitHub
                 <ExternalLinkIcon ml={2} />
               </Button>
             </Link>
           </Tooltip>
-          <Button colorScheme="gray" variant="solid" size="lg">
+          <Button colorScheme="gray" variant="solid" size="lg" fontFamily="'JetBrains Mono', monospace">
             Get Started
           </Button>
         </HStack>
