@@ -5,12 +5,6 @@ import { ExternalLinkIcon } from "@chakra-ui/icons";
 import { keyframes } from "@emotion/react";
 import styled from "@emotion/styled";
 
-// Typewriter effect keyframes for typing
-const typing = keyframes`
-  from { width: 0; }
-  to { width: 38%; }
-`;
-
 // Blinking caret animation
 const blinkCaret = keyframes`
   from, to { border-color: transparent; }
@@ -24,7 +18,11 @@ const gradient = keyframes`
   100% { background-position: 0% 50%; }
 `;
 
-// Styled component for the animated gradient effect with typewriter animation
+const typing = keyframes`
+  from { max-width: 0; }
+  to { max-width: 100%; }
+`;
+
 const GradientTypewriterHeading = styled(Heading)`
   font-family: "JetBrains Mono", monospace;
   font-size: 2rem;
@@ -38,12 +36,15 @@ const GradientTypewriterHeading = styled(Heading)`
   white-space: nowrap;
   overflow: hidden;
   border-right: 3px solid orange;
-  width: 12ch;
-  margin: 0 auto;
+  width: 12ch; // Width of the text content
+  max-width: 100%; // Max-width to allow growth during animation
   animation:
     ${gradient} 8s ease infinite,
-    ${typing} 3s steps(16, end) forwards,
-    ${blinkCaret} 0.75s step-end infinite 3s; // Start blinking after typing
+    ${typing} 0.75s steps(120, end) forwards,
+    ${blinkCaret} 0.75s step-end infinite 0.75s; // Start blinking after typing
+  display: flex; // Use flexbox to center the text and cursor
+  justify-content: center; // Center horizontally
+  margin: 0 auto; // Center the heading in the container
 `;
 
 export default function StartCard() {
