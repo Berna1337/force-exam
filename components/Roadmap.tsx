@@ -25,28 +25,21 @@ const spin = keyframes`
 
 const roadmapItems = [
   {
-    text: "Exam taking Web App for customizable JSON-based exams.",
+    text: "Web Application for Customizable JSON-Based Exams.",
     icon: SpinnerIcon,
     color: "blue.500",
     label: "In Progress",
     animation: `${spin} 2s linear infinite`,
   },
   {
-    text: "An intuitive exam maker for creating JSON-based exams with ease.",
+    text: "An intuitive Exam Maker for creating JSON-Based Exams with ease.",
     icon: TimeIcon,
     color: "red.500",
     label: "Not Started Yet",
     animation: `${float} 2s ease-in-out infinite`,
   },
   {
-    text: "AI-Powered exam maker tool for automated question and answer generation.",
-    icon: TimeIcon,
-    color: "red.500",
-    label: "Not Started Yet",
-    animation: `${float} 2s ease-in-out infinite`,
-  },
-  {
-    text: "NPM package for easy integration of the exam component into various projects.",
+    text: "AI-Powered Exam Maker feature for question and answer generation.",
     icon: TimeIcon,
     color: "red.500",
     label: "Not Started Yet",
@@ -62,7 +55,7 @@ export default function Roadmap() {
     <Box p={5} borderRadius="lg" bg={bgColor} color={textColor} boxShadow="2xl">
       <VStack spacing={5} alignItems="flex-start" flex="1">
         <Text fontSize="2xl" fontWeight="bold" mb={4} textAlign="left" fontFamily="'JetBrains Mono', monospace">
-          ../Project-Roadmap
+          ❯ Project-Roadmap
         </Text>
         <List spacing={2}>
           {roadmapItems.map((item, index) => (
