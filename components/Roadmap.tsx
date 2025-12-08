@@ -23,7 +23,7 @@ const roadmapItems = [
     icon: TriangleUpIcon,
     color: "cyan.300",
     detail: "Navigation, exam listing, and clean JSON-first workflows.",
-    highlight: "MVP UI pass",
+    highlight: "MVP",
   },
   {
     text: "Intuitive exam maker for building JSON exams with ease.",
