@@ -1,75 +1,128 @@
 import React from "react";
 import {
   Box,
-  List,
-  ListItem,
-  ListIcon,
   Text,
   keyframes,
-  useColorModeValue,
-  ScaleFade,
   VStack,
-  Tooltip,
+  Badge,
+  Stack,
+  HStack,
+  Flex,
 } from "@chakra-ui/react";
-import { TimeIcon, SpinnerIcon } from "@chakra-ui/icons";
+import { TimeIcon, TriangleUpIcon } from "@chakra-ui/icons";
 
 const float = keyframes`
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
-`;
-
-const spin = keyframes`
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  50% { transform: translateY(-8px); }
 `;
 
 const roadmapItems = [
   {
-    text: "Web Application for Customizable JSON-Based Exams.",
-    icon: SpinnerIcon,
-    color: "blue.500",
-    label: "In Progress",
-    animation: `${spin} 2s linear infinite`,
+    text: "Web application for customizable JSON-based exams.",
+    status: "In progress",
+    icon: TriangleUpIcon,
+    color: "cyan.300",
+    detail: "Navigation, exam listing, and clean JSON-first workflows.",
+    highlight: "MVP UI pass",
   },
   {
-    text: "An intuitive Exam Maker for creating JSON-Based Exams with ease.",
+    text: "Intuitive exam maker for building JSON exams with ease.",
+    status: "Queued",
     icon: TimeIcon,
-    color: "red.500",
-    label: "Not Started Yet",
-    animation: `${float} 2s ease-in-out infinite`,
+    color: "orange.300",
+    detail: "Visual builder, templates, and schema validation.",
+    highlight: "Designing UX",
   },
   {
-    text: "AI-Powered Exam Maker feature for question and answer generation.",
+    text: "AI-powered exam maker for assisted question generation.",
+    status: "Upcoming",
     icon: TimeIcon,
-    color: "red.500",
-    label: "Not Started Yet",
-    animation: `${float} 2s ease-in-out infinite`,
+    color: "purple.300",
+    detail: "Prompted question banks and AI-driven review suggestions.",
+    highlight: "Researching",
   },
 ];
 
 export default function Roadmap() {
-  const bgColor = useColorModeValue("gray.100", "gray.800");
-  const textColor = useColorModeValue("gray.700", "gray.200");
-
   return (
-    <Box p={5} borderRadius="lg" bg={bgColor} color={textColor} boxShadow="2xl">
-      <VStack spacing={5} alignItems="flex-start" flex="1">
-        <Text fontSize="2xl" fontWeight="bold" mb={4} textAlign="left" fontFamily="'JetBrains Mono', monospace">
-          ❯ Project-Roadmap
-        </Text>
-        <List spacing={2}>
-          {roadmapItems.map((item, index) => (
-            <ScaleFade key={index} initialScale={0.9} in={true} delay={index * 0.1}>
-              <ListItem display="flex" alignItems="center">
-                <Tooltip label={item.label} placement="top">
-                  <ListIcon as={item.icon} color={item.color} boxSize="16px" animation={item.animation} />
-                </Tooltip>
-                {item.text}
-              </ListItem>
-            </ScaleFade>
-          ))}
-        </List>
-      </VStack>
+    <Box
+      w="full"
+      bg="rgba(255,255,255,0.02)"
+      border="1px solid"
+      borderColor="whiteAlpha.200"
+      borderRadius="2xl"
+      p={{ base: 6, md: 8 }}
+      boxShadow="0 20px 80px rgba(0, 0, 0, 0.35)"
+      backdropFilter="blur(12px)"
+    >
+      <Flex align={{ base: "flex-start", md: "center" }} justify="space-between" mb={6} gap={4}>
+        <Box>
+          <Text fontSize="lg" color="cyan.200" fontFamily="'JetBrains Mono', monospace" letterSpacing="0.08em">
+            ❯ Project Roadmap
+          </Text>
+        </Box>
+        <Badge colorScheme="gray" variant="outline" borderRadius="full" px={3} py={1} borderColor="whiteAlpha.300">
+          Current snapshot
+        </Badge>
+      </Flex>
+
+      <Stack spacing={6} position="relative" _before={{
+        content: '""',
+        position: "absolute",
+        left: "16px",
+        top: "6px",
+        bottom: "6px",
+        borderLeft: "1px dashed",
+        borderColor: "whiteAlpha.400",
+        opacity: 0.8,
+      }}>
+        {roadmapItems.map((item, index) => (
+          <HStack key={item.text} spacing={5} align="flex-start" pl={10}>
+            <Box position="absolute" left="8px" mt="6px">
+              <Box
+                w={3.5}
+                h={3.5}
+                borderRadius="full"
+                bgGradient={`linear(to-br, ${item.color}, whiteAlpha.900)`}
+                boxShadow={`0 0 0 6px rgba(255,255,255,0.06), 0 10px 30px -10px ${item.color}`}
+                animation={index === 0 ? `${float} 3s ease-in-out infinite` : undefined}
+              />
+            </Box>
+
+            <VStack align="flex-start" spacing={2} bg="whiteAlpha.50" border="1px solid" borderColor="whiteAlpha.200" borderRadius="xl" p={4} w="full">
+              <HStack spacing={3} align="center">
+                {index === 0 ? (
+                  <TriangleUpIcon color={item.color} boxSize={4} />
+                ) : (
+                  <TimeIcon color={item.color} boxSize={4} />
+                )}
+                <Text fontWeight="semibold" color="white">
+                  {item.text}
+                </Text>
+                <Badge colorScheme="whiteAlpha" variant="subtle" borderRadius="full" px={3} py={1} color={item.color}>
+                  {item.status}
+                </Badge>
+              </HStack>
+              <Text color="whiteAlpha.800">{item.detail}</Text>
+              <HStack spacing={3} flexWrap="wrap">
+                <Badge colorScheme="gray" variant="outline" borderRadius="full" px={3} py={1} borderColor="whiteAlpha.300" color={item.color}>
+                  {item.highlight}
+                </Badge>
+                {index === 0 && (
+                  <Badge colorScheme="cyan" variant="solid" borderRadius="full" px={3} py={1} bg="cyan.500" color="gray.900">
+                    On it now
+                  </Badge>
+                )}
+                {index > 0 && (
+                  <Badge colorScheme="gray" variant="outline" borderRadius="full" px={3} py={1} borderColor="whiteAlpha.400">
+                    Next
+                  </Badge>
+                )}
+              </HStack>
+            </VStack>
+          </HStack>
+        ))}
+      </Stack>
     </Box>
   );
 }
