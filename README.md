@@ -5,6 +5,27 @@ For this Force Exam uses JSON as the format of the exams and provides a simple b
 
 Currently, Force Exam is in the early stages of development and is not ready for production use.
 
+## JSON Exam Format
+
+Force Exam can import a portable JSON exam and run it locally in the browser.
+
+```json
+{
+  "title": "Force Exam sample",
+  "description": "A short practice set.",
+  "questions": [
+    {
+      "question": "Which field contains the answer choices?",
+      "options": ["title", "options", "description", "questions"],
+      "answer": "options",
+      "explanation": "Each question uses an options array for selectable answers."
+    }
+  ]
+}
+```
+
+Each question supports `question` or `prompt`, an `options` array with at least two choices, and `answer` or `correctAnswer`. The answer can be a zero-based option index or the exact option text.
+
 
 This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
 

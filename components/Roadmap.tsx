@@ -18,11 +18,11 @@ const float = keyframes`
 
 const roadmapItems = [
   {
-    text: "Web application for customizable JSON-based exams.",
+    text: "Import and practice JSON-based exams in the browser.",
     status: "In progress",
     icon: TriangleUpIcon,
     color: "cyan.300",
-    detail: "Navigation, exam listing, and clean JSON-first workflows.",
+    detail: "Paste exam JSON, answer questions, finish, and review misses locally.",
     highlight: "MVP",
   },
   {
