@@ -13,8 +13,6 @@ import {
   Heading,
   HStack,
   Progress,
-  Radio,
-  RadioGroup,
   SimpleGrid,
   Stack,
   Text,
@@ -370,20 +368,49 @@ export default function ExamRunner({ onBack }: ExamRunnerProps) {
               {currentQuestion.prompt}
             </Heading>
 
-            <RadioGroup
-              value={answers[currentQuestion.id]?.toString() ?? ""}
-              onChange={(value) => setAnswers((current) => ({ ...current, [currentQuestion.id]: Number(value) }))}
-            >
-              <Stack spacing={3}>
-                {currentQuestion.options.map((option, index) => (
-                  <Box key={option} border="1px solid" borderColor="whiteAlpha.300" borderRadius="md" px={4} py={3} _hover={{ borderColor: "cyan.300", bg: "whiteAlpha.100" }}>
-                    <Radio value={index.toString()} colorScheme="cyan">
-                      <Text color="whiteAlpha.900">{option}</Text>
-                    </Radio>
+            <Stack spacing={3} role="radiogroup" aria-label={`Question ${currentIndex + 1} answers`}>
+              {currentQuestion.options.map((option, index) => {
+                const isSelected = answers[currentQuestion.id] === index;
+
+                return (
+                  <Box
+                    key={option}
+                    as="button"
+                    type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    w="full"
+                    textAlign="left"
+                    border="1px solid"
+                    borderColor={isSelected ? "cyan.300" : "whiteAlpha.400"}
+                    borderRadius="md"
+                    bg={isSelected ? "rgba(8, 145, 178, 0.22)" : "rgba(255,255,255,0.04)"}
+                    color="whiteAlpha.900"
+                    px={4}
+                    py={3}
+                    cursor="pointer"
+                    transition="background 0.15s ease, border-color 0.15s ease"
+                    _hover={{ borderColor: "cyan.300", bg: isSelected ? "rgba(8, 145, 178, 0.28)" : "whiteAlpha.100" }}
+                    _focusVisible={{ borderColor: "cyan.200", boxShadow: "0 0 0 2px var(--chakra-colors-cyan-300)" }}
+                    onClick={() => setAnswers((current) => ({ ...current, [currentQuestion.id]: index }))}
+                  >
+                    <HStack spacing={3}>
+                      <Box
+                        aria-hidden="true"
+                        boxSize="16px"
+                        border="1px solid"
+                        borderColor={isSelected ? "cyan.300" : "whiteAlpha.500"}
+                        borderRadius="full"
+                        bg={isSelected ? "cyan.400" : "transparent"}
+                        boxShadow={isSelected ? "inset 0 0 0 4px var(--chakra-colors-gray-800)" : "none"}
+                        flexShrink={0}
+                      />
+                      <Text>{option}</Text>
+                    </HStack>
                   </Box>
-                ))}
-              </Stack>
-            </RadioGroup>
+                );
+              })}
+            </Stack>
           </Box>
         )}
 
@@ -413,17 +440,31 @@ export default function ExamRunner({ onBack }: ExamRunnerProps) {
         <Divider borderColor="whiteAlpha.300" />
 
         <SimpleGrid columns={{ base: 4, sm: 6, md: 10 }} spacing={2}>
-          {exam.questions.map((question, index) => (
-            <Button
-              key={question.id}
-              size="sm"
-              variant={index === currentIndex ? "solid" : "outline"}
-              colorScheme={answers[question.id] === undefined ? "gray" : "cyan"}
-              onClick={() => setCurrentIndex(index)}
-            >
-              {index + 1}
-            </Button>
-          ))}
+          {exam.questions.map((question, index) => {
+            const isCurrent = index === currentIndex;
+            const isAnswered = answers[question.id] !== undefined;
+
+            return (
+              <Button
+                key={question.id}
+                size="sm"
+                variant="outline"
+                aria-label={`Go to question ${index + 1}`}
+                bg={isCurrent ? "cyan.400" : isAnswered ? "cyan.900" : "whiteAlpha.100"}
+                borderColor={isCurrent ? "cyan.200" : isAnswered ? "cyan.300" : "whiteAlpha.500"}
+                color={isCurrent ? "gray.900" : "white"}
+                fontWeight="700"
+                _hover={{
+                  bg: isCurrent ? "cyan.300" : isAnswered ? "cyan.800" : "whiteAlpha.200",
+                  borderColor: "cyan.200",
+                }}
+                _active={{ bg: isCurrent ? "cyan.300" : "cyan.800" }}
+                onClick={() => setCurrentIndex(index)}
+              >
+                {index + 1}
+              </Button>
+            );
+          })}
         </SimpleGrid>
       </Stack>
     </Box>

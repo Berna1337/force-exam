@@ -10,7 +10,7 @@ export default function Footer() {
       zIndex={20}
       pointerEvents="none"
     >
-      <Link
+      {/* <Link
         href="https://buymeacoffee.com/berna1337"
         isExternal
         fontWeight="semibold"
@@ -31,7 +31,7 @@ export default function Footer() {
           ☕
         </Text>
         Buy me a coffee
-      </Link>
+      </Link> */}
     </Box>
   );
 }
