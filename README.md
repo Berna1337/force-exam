@@ -15,8 +15,31 @@ Force Exam can import a portable JSON exam and run it locally in the browser.
   "description": "A short practice set.",
   "questions": [
     {
-      "question": "Which field contains the answer choices?",
-      "options": ["title", "options", "description", "questions"],
+      "question": "Which image shows where answer choices live in the JSON schema?",
+      "images": [
+        "https://example.com/question-image-1.png",
+        {
+          "url": "https://example.com/question-image-2.png",
+          "alt": "A second reference image",
+          "description": "This description renders under the image."
+        }
+      ],
+      "options": [
+        "title",
+        {
+          "text": "options",
+          "images": [
+            "https://example.com/answer-image-1.png",
+            {
+              "url": "https://example.com/answer-image-2.png",
+              "caption": "Captions also render under answer images."
+            }
+          ],
+          "imageAlt": "Code showing an options array"
+        },
+        "description",
+        "questions"
+      ],
       "answer": "options",
       "explanation": "Each question uses an options array for selectable answers."
     }
@@ -24,7 +47,11 @@ Force Exam can import a portable JSON exam and run it locally in the browser.
 }
 ```
 
-Each question supports `question` or `prompt`, an `options` array with at least two choices, and `answer` or `correctAnswer`. The answer can be a zero-based option index or the exact option text.
+Each question supports `question` or `prompt`, optional `images`, `imageUrls`, `imageUrl`, or `image`, an `options` array with at least two choices, and `answer` or `correctAnswer`.
+
+Options can be plain strings or objects. Object options support `text`, optional `images`, `imageUrls`, `imageUrl`, or `image`, and optional `imageAlt`, `imageDescription`, or `imageCaption`. Use `images` when you need multiple pictures. Image entries can be URL strings or objects with `url`, optional `alt`, and optional `description` or `caption`. When a question or option has more than one image, Force Exam shows them in a carousel.
+
+The answer can be a zero-based option index, an answer letter like `A` or `B`, or the exact option text. Answer choices render with letter labels, so image-only options can use the letter or zero-based index.
 
 
 This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
