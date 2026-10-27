@@ -1,5 +1,33 @@
 html,
 body {
-    background-color: #1a202c; /* gray.800 in Chakra UI */
-    color: white; /* Set text color to white for contrast */
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    color-scheme: dark;
+}
+
+* { scrollbar-width: thin; scrollbar-color: #444 transparent; }
+::selection { background: #554273; color: #fff; }
+input[type="file"]::file-selector-button {
+    background: #333;
+    color: #ccc;
+    border: 0;
+    border-radius: 4px;
+    padding: 4px 12px;
+    margin-right: 12px;
+    cursor: pointer;
+}
+
+.app-titlebar {
+    -webkit-app-region: drag;
+}
+.titlebar-content {
+    margin-left: env(titlebar-area-x, 0px);
+    width: env(titlebar-area-width, 100%);
+}
+.app-titlebar[data-mac="true"] .titlebar-content {
+    margin-left: 80px;
+    width: calc(100% - 80px);
+}
+.app-titlebar button {
+    -webkit-app-region: no-drag;
 }

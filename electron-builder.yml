@@ -1,0 +1,27 @@
+appId: com.forceexam.desktop
+productName: Force Exam
+asar: true
+directories:
+  output: dist
+files:
+  - desktop/entry.cjs
+  - desktop/main.cjs
+  - desktop/preload.cjs
+  - desktop/exam-git.cjs
+  - desktop/export.cjs
+  - desktop/images.cjs
+  - out/**/*
+  - package.json
+artifactName: Force-Exam-${version}-${os}-${arch}.${ext}
+win:
+  target:
+    - portable
+mac:
+  category: public.app-category.education
+  target:
+    - zip
+linux:
+  category: Education
+  target:
+    - AppImage
+    - tar.gz
