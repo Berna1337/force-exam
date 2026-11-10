@@ -36,6 +36,7 @@ export type ExamAttempt = {
 };
 
 export type SavedExam = {
+  passingScore?: number;
   folderId?: string;
   archivedAt?: string;
   id: string;
@@ -90,6 +91,7 @@ export function readLibrary(json: string | null): SavedExam[] {
     typeof item.title === "string" && typeof item.json === "string" &&
     typeof item.questionCount === "number" && Number.isInteger(item.questionCount) && item.questionCount > 0).map((item) => ({
       id: item.id, title: item.title, json: item.json, questionCount: item.questionCount,
+      ...(typeof item.passingScore === "number" && Number.isInteger(item.passingScore) && item.passingScore >= 1 && item.passingScore <= 100 ? { passingScore: item.passingScore } : {}),
       folderId: typeof item.folderId === "string" ? item.folderId : undefined,
       archivedAt: typeof item.archivedAt === "string" && Number.isFinite(Date.parse(item.archivedAt)) ? item.archivedAt : undefined,
       progress: readProgress(item.progress),

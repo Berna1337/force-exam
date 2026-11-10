@@ -143,7 +143,7 @@ export default function Home() {
     }
     const id = crypto.randomUUID();
     setTabs((current) => [...current.filter((tab) => tab.id !== existing?.id), {
-      id, title: `${exam.title} · ${mode === "exam" ? "Exam" : "Practice"}`, libraryId: exam.id, initialJson: exam.json, initialProgress: progress, initialMode: mode, settings: cleanSettings(options),
+      id, title: `${exam.title} · ${mode === "exam" ? "Exam" : "Practice"}`, libraryId: exam.id, initialJson: exam.json, initialProgress: progress, initialMode: mode, settings: progress ? cleanSettings(progress.settings) : cleanSettings({ ...options, passingScore: exam.passingScore }),
     }]);
     setActiveId(id);
   };
@@ -389,6 +389,11 @@ export default function Home() {
     libraryRef.current = next; setLibrary(next); setStorageError("");
   };
   const organizationError = (cause: unknown) => setStorageError(cause instanceof Error ? cause.message : "Could not update the library.");
+  const savePassingScore = (id: string, value?: number) => {
+    const passingScore = cleanSettings({ passingScore: value }).passingScore;
+    try { persistOrganization(libraryRef.current.map(exam => exam.id === id ? { ...exam, passingScore } : exam)); }
+    catch (cause) { organizationError(cause); }
+  };
   const saveOrganization = (name: string, parentId?: string) => {
     if (!organizationAction) return;
     if (organizationAction.type === "create") {
@@ -534,7 +539,7 @@ export default function Home() {
                 const session = tab.focus ? exam?.focusedProgress : exam?.progress;
                 return <Box key={tab.id} display={activeId === tab.id ? "block" : "none"}>
                   {exam && (tab.kind === "overview" || (!tab.kind && session?.isReviewing)) && <ExamOrganizationBar folder={folderPath(folders, exam.folderId) || "Library root"} archived={examArchived(exam, folders)} onMove={() => setOrganizationAction({ type: "move-exam", exam })} onArchive={() => toggleExamArchive(exam)} />}
-                  {tab.kind === "editor" ? <ExamEditor examId={tab.libraryId} initialJson={tab.initialJson} gitCommit={tab.gitCommit} onSave={(json) => saveEditor(tab, json)} onClose={() => closeTab(tab.id)} /> : tab.kind === "overview" && exam ? <ExamOverview exam={exam} isArchived={examArchived(exam, folders)} onStudy={(fresh, mode, settings) => startPractice(exam, fresh, mode, settings)} onFocused={(kind, ids) => startFocused(exam, kind, ids)} onResumeFocused={() => { if (exam.focusedProgress?.focus) startFocused(exam, exam.focusedProgress.focus, exam.focusedProgress.focusedQuestionIds ?? [], true); }} onEdit={() => openEditor(exam)} onDelete={() => setPendingDelete(exam)} onEnsureHistory={ensureGitHistory} onSwitchVersion={switchVersion} /> : <>
+                  {tab.kind === "editor" ? <ExamEditor examId={tab.libraryId} initialJson={tab.initialJson} gitCommit={tab.gitCommit} onSave={(json) => saveEditor(tab, json)} onClose={() => closeTab(tab.id)} /> : tab.kind === "overview" && exam ? <ExamOverview exam={exam} onPassingScoreChange={value => savePassingScore(exam.id, value)} isArchived={examArchived(exam, folders)} onStudy={(fresh, mode, settings) => startPractice(exam, fresh, mode, settings)} onFocused={(kind, ids) => startFocused(exam, kind, ids)} onResumeFocused={() => { if (exam.focusedProgress?.focus) startFocused(exam, exam.focusedProgress.focus, exam.focusedProgress.focusedQuestionIds ?? [], true); }} onEdit={() => openEditor(exam)} onDelete={() => setPendingDelete(exam)} onEnsureHistory={ensureGitHistory} onSwitchVersion={switchVersion} /> : <>
                     <ExamRunner isActive={activeId === tab.id} settings={tab.settings} initialFocus={tab.focus} initialFocusedQuestionIds={tab.focusedQuestionIds} onFocused={(kind, ids) => { if (exam) startFocused(exam, kind, ids); }} initialJson={tab.initialJson} initialProgress={tab.initialProgress} initialMode={tab.initialMode} onOverview={() => { if (exam) openExam(exam); }} onBack={() => closeTab(tab.id)} onExamImported={(title, json, count) => saveExam(tab.id, title, json, count)} onProgressChange={(progress) => { if (tab.libraryId) updateProgress(tab.libraryId, progress, !!tab.focus); }} onAttemptComplete={(attempt) => { if (tab.libraryId) recordAttempt(tab.libraryId, attempt); }} />
                     {exam && session?.isReviewing && <Box mt={6}><ExamDetails exam={exam} isArchived={examArchived(exam, folders)} onEnsureHistory={ensureGitHistory} onSwitchVersion={switchVersion} onEdit={() => openEditor(exam)} onDelete={() => setPendingDelete(exam)} /></Box>}
                   </>}

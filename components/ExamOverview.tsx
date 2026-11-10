@@ -10,8 +10,9 @@ import FocusedPractice from "./FocusedPractice";
 import ExamDetails from "./ExamDetails";
 import { modeLabel, runMode, sessionLabel, type FocusKind, type RunMode } from "../lib/run";
 
-export default function ExamOverview({ exam, onStudy, onEdit, onDelete, onEnsureHistory, onSwitchVersion, onFocused, onResumeFocused, isArchived = false }: {
+export default function ExamOverview({ exam, onStudy, onPassingScoreChange, onEdit, onDelete, onEnsureHistory, onSwitchVersion, onFocused, onResumeFocused, isArchived = false }: {
   exam: SavedExam; onStudy: (fresh: boolean, mode: RunMode, settings?: RunSettings) => void; onEdit: () => void; onDelete: () => void;
+  onPassingScoreChange: (value?: number) => void;
   onEnsureHistory: (id: string) => Promise<void>;
   onSwitchVersion: (id: string, version: GitVersion) => Promise<void>;
   onFocused: (kind: FocusKind, ids: string[]) => void;
@@ -20,7 +21,12 @@ export default function ExamOverview({ exam, onStudy, onEdit, onDelete, onEnsure
 }) {
   const attempts = currentAttempts(exam);
   const [selectedMode, setSelectedMode] = useState<RunMode>(runMode(exam.progress?.mode));
-  const [settings, setSettings] = useState<RunSettings>({});
+  const [sessionSettings, setSessionSettings] = useState<RunSettings>({});
+  const settings = { ...sessionSettings, passingScore: exam.passingScore };
+  const updateSettings = ({ passingScore, ...rest }: RunSettings) => {
+    setSessionSettings(rest);
+    if (passingScore !== exam.passingScore) onPassingScoreChange(passingScore);
+  };
   let topics: string[] = [];
   try { topics = Array.from(new Set(normalizeExam(JSON.parse(exam.json)).questions.flatMap(question => question.tags ?? []))).sort(); } catch {}
   const latest = attempts[0];
@@ -66,7 +72,7 @@ export default function ExamOverview({ exam, onStudy, onEdit, onDelete, onEnsure
           </Box>)}
         </SimpleGrid>
       </RadioGroup>
-      <RunSettingsEditor mode={selectedMode} count={exam.questionCount} topics={topics} value={settings} onChange={setSettings} />
+      <RunSettingsEditor mode={selectedMode} count={exam.questionCount} topics={topics} value={settings} onChange={updateSettings} />
       <HStack flexWrap="wrap" spacing={3} mt={5}>
         <Button className="primary-action" colorScheme="purple" size="sm" rightIcon={<ArrowForwardIcon />} onClick={() => onStudy(false, exam.progress ? runMode(exam.progress.mode) : selectedMode, settings)}>{action}</Button>
         {exam.progress && <Button size="sm" variant="outline" leftIcon={<RepeatIcon />} onClick={() => onStudy(true, selectedMode, settings)}>Start new attempt</Button>}

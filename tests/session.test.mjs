@@ -79,3 +79,12 @@ test('workspace shows only the three most recent unfinished sessions with pool p
   assert.deepEqual(sessions.map(item => [item.answered, item.total]), [[0, 1], [1, 2], [1, 30]]);
   assert.deepEqual(unfinishedSessions([]), []);
 });
+
+test('exam passing defaults survive reloads and stay separate from attempt targets', () => {
+  const base = { id: 'x', title: 'Default target', json: '{}', questionCount: 5, revision: 1, attempts: [], progress: { attemptId: 'run', currentIndex: 0, answers: {}, isReviewing: false, updatedAt: '2026-11-10T12:00:00Z', settings: { passingScore: 60 } } };
+  const load = value => readLibrary(JSON.stringify([{ ...base, passingScore: value }]))[0];
+  assert.equal(load(80).passingScore, 80);
+  assert.equal(load(80).progress.settings.passingScore, 60);
+  for (const invalid of [undefined, null, 0, 101, '80', 75.5]) assert.equal(load(invalid).passingScore, undefined);
+  assert.equal(load(undefined).progress.settings.passingScore, 60);
+});

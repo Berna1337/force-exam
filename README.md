@@ -193,7 +193,7 @@ In Exam Mode, a **Time limit** from 1–240 minutes establishes an absolute dead
 
 ### Passing scores
 
-In Session options, set an optional **Passing score** from 1–100% for Practice or Exam Mode. Leave it blank to disable the target. The target stays with the saved attempt and retakes; a new attempt can use a different target. Results show whether the exact score meets or exceeds the target, and passing a newly completed attempt triggers a short confetti celebration. Reopening saved results does not trigger confetti. Reduced-motion preferences suppress the animation.
+In Session options, set an optional **Passing score** from 1–100% for Practice or Exam Mode. Leave it blank to disable the target. The target saves automatically with the exam in your local library, survives restarts, and is reused for new Practice and Exam attempts. Clear the field to remove the saved default. Existing attempts and their retakes retain their original target. Full backups include the default; shared exam JSON does not. Results show whether the exact score meets or exceeds the target, and passing a newly completed attempt triggers a short confetti celebration. Reopening saved results does not trigger confetti. Reduced-motion preferences suppress the animation.
 
 ### Practice feedback and keyboard shortcuts
 

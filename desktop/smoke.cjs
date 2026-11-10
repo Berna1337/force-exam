@@ -221,6 +221,11 @@ app.whenReady().then(async () => {
   assert.equal(importedWithoutSession.progress, undefined, 'Importing does not create a practice session');
   assert.deepEqual(importedWithoutSession.attempts, []);
   await fill('Passing score', '20');
+  await waitFor('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].passingScore === 20');
+  await fill('Passing score', '');
+  await waitFor('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].passingScore === undefined');
+  await fill('Passing score', '20');
+
   assert.equal(await run('Array.from(document.querySelectorAll(\'[role="radiogroup"][aria-label^="Question "]\')).some(el => el.getClientRects().length)'), false);
   await enterStudy();
   await waitFor('document.body.textContent.includes("Which field contains")');
@@ -258,6 +263,8 @@ app.whenReady().then(async () => {
     await waitFor('!!document.querySelector(\'[aria-label="Exam overview"]\')');
     assert.equal(await run('Array.from(document.querySelectorAll(\'[role="radiogroup"][aria-label^="Question "]\')).some(el => el.getClientRects().length)'), false, 'Selecting an exam must not start practice');
     assert.equal(await run('localStorage.getItem("force-exam-library-v1")'), before, 'Browsing an exam must not change progress');
+    const defaultTarget = JSON.parse(before).find(exam => exam.title === 'Force Exam schema sample').passingScore;
+    assert.equal(await run(`document.querySelector('[aria-label="Passing score"]').value`), defaultTarget === undefined ? '' : String(defaultTarget), 'Exam passing target survives restart');
     await screenshot('workspace-exam-overview.png');
     await enterStudy();
   };
@@ -265,6 +272,12 @@ app.whenReady().then(async () => {
   await waitFor('document.querySelector("main").innerText.includes("Question 3 of 5")');
   assert.equal(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.answers["question-0"]'), 2);
   assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions'), ['question-0', 'question-2']);
+  await click('Back to overview');
+  await fill('Passing score', '80');
+  assert.equal(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].passingScore'), 80);
+  assert.equal(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.settings.passingScore'), 20, 'Changing the exam default does not change the current attempt');
+  await fill('Passing score', '20');
+  await enterStudy();
   await screenshot('workspace-practice.png');
   await run('document.querySelector(\'[aria-label="Hide sidebar"]\').click()');
   await waitFor('!document.querySelector(\'[aria-label="Exam library"]\')');
