@@ -1,0 +1,16 @@
+import { Box, Checkbox, FormControl, FormLabel, HStack, Input, Select, SimpleGrid, Text } from '@chakra-ui/react';
+import type { RunSettings } from '../lib/session';
+import type { RunMode } from '../lib/run';
+export default function RunSettingsEditor({ mode, count, topics, value, onChange }: { mode: RunMode; count: number; topics: string[]; value: RunSettings; onChange: (value: RunSettings) => void }) {
+  const summary = `${value.questionCount || count} questions${value.topic ? ` · ${value.topic}` : ''}${mode === 'exam' ? value.durationMinutes ? ` · ${value.durationMinutes} min` : ' · Untimed' : value.feedback ? ' · Instant feedback' : ''}${value.passingScore ? ` · Pass ${value.passingScore}%` : ''}`;
+  return <Box as="details" data-session-options className="session-options" mt={4}><Box as="summary"><HStack justify="space-between" flexWrap="wrap"><Text fontSize="xs" fontWeight="500">Session options</Text><Text fontSize="xs" color="var(--muted)">{summary}</Text></HStack></Box><Box p={4}><SimpleGrid columns={{ base: 1, md: 2 }} gap={4}>
+    <FormControl><FormLabel fontSize="xs">Passing score (%, optional)</FormLabel><Input type="number" aria-label="Passing score" min={1} max={100} step={1} size="sm" placeholder="No passing score" value={value.passingScore ?? ''} onChange={event => onChange({ ...value, passingScore: event.target.value === '' ? undefined : Math.min(100, Math.max(1, Math.round(Number(event.target.value)))) })} /><Text mt={2} fontSize="xs" color="var(--muted)">Meet or exceed this percentage to pass and celebrate. Leave blank to disable.</Text></FormControl>
+    <FormControl><FormLabel fontSize="xs">Questions per attempt (0 = all)</FormLabel><Input type="number" aria-label="Questions per attempt" min={0} max={count} size="sm" value={value.questionCount ?? 0} onChange={event => onChange({ ...value, questionCount: Number(event.target.value) || undefined })} /></FormControl>
+    {mode === 'exam' && <FormControl><FormLabel fontSize="xs">Time limit in minutes (0 = untimed)</FormLabel><Input type="number" aria-label="Time limit minutes" min={0} max={240} size="sm" value={value.durationMinutes ?? 0} onChange={event => onChange({ ...value, durationMinutes: Number(event.target.value) || undefined })} /></FormControl>}
+    {!!topics.length && <FormControl><FormLabel fontSize="xs">Topic</FormLabel><Select size="sm" aria-label="Practice topic" value={value.topic ?? ''} onChange={event => onChange({ ...value, topic: event.target.value || undefined })}><option value="">All topics</option>{topics.map(topic => <option key={topic}>{topic}</option>)}</Select></FormControl>}
+  </SimpleGrid>
+  {mode === 'practice' && <HStack mt={3}><Checkbox isChecked={!!value.feedback} onChange={event => onChange({ ...value, feedback: event.target.checked })}>Show feedback after answering</Checkbox></HStack>}
+  <Text mt={3} fontSize="xs" color="var(--muted)">Settings apply to new attempts. Smaller pools are drawn randomly, then use the selected mode’s order. Pool scores are labeled separately. Feedback locks an answer after revealing it.</Text>
+  {mode === 'exam' && !!value.durationMinutes && <Text mt={2} fontSize="xs" color="var(--warning)">The timer continues while you are away or the app is closed. When time expires, the saved attempt is submitted automatically, including on reopening.</Text>}
+  </Box></Box>;
+}

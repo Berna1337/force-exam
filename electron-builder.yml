@@ -7,6 +7,7 @@ files:
   - desktop/entry.cjs
   - desktop/main.cjs
   - desktop/preload.cjs
+  - desktop/backup.cjs
   - desktop/exam-git.cjs
   - desktop/export.cjs
   - desktop/images.cjs

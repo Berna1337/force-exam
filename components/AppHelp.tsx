@@ -5,6 +5,21 @@ import {
 } from "@chakra-ui/react";
 
 const instructions = [
+  { title: "Settings and appearance", steps: [
+    "Use the gear icon at the bottom left to open Settings. Choose Graphite, Midnight, Warm charcoal, Forest, Rose, OLED Black, Catppuccin Mocha, One Dark, Daylight, Paper, or Catppuccin Latte from the theme previews. Pick a preset or custom accent color, larger text, or reduced motion. Changes save on this device and are included in complete backups.",
+  ] },
+  { title: "Backups and progress dashboard", steps: [
+    "Settings → Backup and restore (also in the File menu) saves the entire library, including private progress, scores, drafts, archives, images, and exact local Git history. Close editors first; drafts are kept. Backups are not encrypted, and are different from shared collections.",
+    "Choose a backup to preview it, then explicitly confirm replacement to restore. Restoring replaces this device’s library and versions; it does not merge them. Keep a separate backup of your current library when you want to retain both. Normal restore failures keep the original data.",
+    "Open Progress dashboard using the chart icon in the left toolbar or the View menu. Filter by exam, mode, run type, and version. The chart shows recent scores, and topic accuracy identifies areas to work on. Older scores remain usable; topic statistics are recorded on future attempts.",
+  ] },
+  { title: "Timers, pools, feedback, and shortcuts", steps: [
+    "On the exam overview, set a question count to draw a smaller random pool, or choose a topic. Practice uses the pool in original order; Exam Mode shuffles it. The same pool is kept when resuming, and pool scores are labeled separately from full runs.",
+    "Exam Mode can use a time limit of up to 240 minutes. The deadline keeps running when you leave the session or close the app. Expired sessions are submitted automatically, including when reopened. Zero means untimed. Settings apply to new attempts; resuming keeps saved settings.",
+    "Practice Mode can show the correct answer, explanation, and answer images immediately after you answer. Once feedback is shown, that question’s answer is locked for the attempt. Exam Mode always waits until the results screen.",
+    "While answering, use number keys 1–9 to choose an answer, left/right arrows to move between questions, and F to toggle the review mark. These shortcuts apply only to the active question screen and do not run while typing in a field or using a dialog.",
+    "Add comma-separated topics or tags to questions in the editor. Tags are included in exam exports and version comparisons; changing tags alone keeps your question version and saved progress.",
+  ] },
   {
     title: "Organize folders and archive exams",
     steps: [
@@ -29,6 +44,8 @@ const instructions = [
     steps: [
       "Selecting an exam opens its overview, with question counts, scores, and saved progress. Choose Start practice, Resume practice, or View last result when you are ready. Browsing the overview does not start a session.",
       "While answering, use Back to overview to pause without losing your answers or place. Resume practice or Resume exam continues the same session and question order. Editing, exports, versions, and starting a new attempt are available from the overview.",
+      "Focused practice starts a smaller set of missed or marked questions from the overview or results. Missed includes unanswered questions after finishing. Sets use the original question order, have their own saved session and score labels, and do not replace your full exam progress or affect full-exam averages. Resume focused practice continues your last set. Starting another set replaces the previous focused session; its completed score remains in history.",
+      "Use Mark for review on any question in Practice Mode, Exam Mode, or the results review. Marked questions show a flag in the question navigator. On the results screen, Show marked only filters the review to those questions. Marks save with the current session and exam version, stay private when exporting, and clear when you start a new attempt.",
       "Choose Practice Mode for the original question order, or Exam Mode to shuffle questions once per new attempt. Resuming an Exam Mode run keeps its saved order. Answer choices stay in their original order in both modes.",
       "During practice, select an answer for each question. Use Previous, Next, or the question numbers to navigate. Exam overview returns to the exam’s landing page.",
       "Your answers and current question save automatically. Close a tab or quit the app, then reopen the exam from the library to resume.",
@@ -65,19 +82,19 @@ const instructions = [
 export default function AppHelp({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   return <Modal isOpen={isOpen} onClose={onClose} size="2xl" scrollBehavior="inside" isCentered>
     <ModalOverlay bg="blackAlpha.700" />
-    <ModalContent mx={4} bg="#232323" border="1px solid #3a3a3a" maxH="calc(100dvh - 48px)">
+    <ModalContent mx={4} bg="var(--surface)" border="1px solid var(--border)" maxH="calc(100dvh - 48px)">
       <ModalHeader pb={2}>Force Exam guide</ModalHeader>
       <ModalCloseButton aria-label="Close help" />
       <ModalBody>
-        <Text color="#aaa" fontSize="sm" mb={5}>Create your exams, study at your own pace, and pick up where you left off.</Text>
+        <Text color="var(--muted)" fontSize="sm" mb={5}>Create your exams, study at your own pace, and pick up where you left off.</Text>
         <Accordion allowMultiple defaultIndex={[0]}>
-          {instructions.map((section) => <AccordionItem key={section.title} borderColor="#3a3a3a">
-            <AccordionButton px={0} py={4} _expanded={{ color: "purple.200" }}><Box flex="1" textAlign="left" fontSize="sm" fontWeight="500">{section.title}</Box><AccordionIcon /></AccordionButton>
-            <AccordionPanel px={1} pb={4}><UnorderedList spacing={3} fontSize="sm" color="#aaa" lineHeight="1.8">{section.steps.map((step) => <ListItem key={step}>{step}</ListItem>)}</UnorderedList></AccordionPanel>
+          {instructions.map((section) => <AccordionItem key={section.title} borderColor="var(--border)">
+            <AccordionButton px={0} py={4} _expanded={{ color: "var(--accent-text)" }}><Box flex="1" textAlign="left" fontSize="sm" fontWeight="500">{section.title}</Box><AccordionIcon /></AccordionButton>
+            <AccordionPanel px={1} pb={4}><UnorderedList spacing={3} fontSize="sm" color="var(--muted)" lineHeight="1.8">{section.steps.map((step) => <ListItem key={step}>{step}</ListItem>)}</UnorderedList></AccordionPanel>
           </AccordionItem>)}
         </Accordion>
         <Heading as="h3" size="xs" mt={6} mb={4}>Keyboard shortcuts</Heading>
-        <Stack spacing={3} fontSize="xs" color="#aaa" pb={2}>
+        <Stack spacing={3} fontSize="xs" color="var(--muted)" pb={2}>
           <Text><Kbd>Ctrl / ⌘</Kbd> + <Kbd>O</Kbd> <Box as="span" ml={3}>Import an exam</Box></Text>
           <Text><Kbd>Ctrl / ⌘</Kbd> + <Kbd>\</Kbd> <Box as="span" ml={3}>Toggle the sidebar</Box></Text>
           <Text><Kbd>F1</Kbd> <Box as="span" ml={3}>Open this guide</Box></Text>

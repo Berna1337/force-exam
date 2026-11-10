@@ -2,6 +2,7 @@ import type { Exam, ExamImage } from "./exam";
 
 export type EditorOption = { id: string; text: string; images: ExamImage[] };
 export type EditorQuestion = {
+  tags?: string[];
   id: string; prompt: string; images: ExamImage[]; options: EditorOption[];
   answerIndex: number; explanation: string;
 };
@@ -28,7 +29,7 @@ export function serializeExam(exam: EditorExam): string {
   return JSON.stringify({
     title: exam.title.trim(), description: exam.description.trim() || undefined,
     questions: exam.questions.map((question) => ({
-      id: question.id, question: question.prompt, images: question.images,
+      id: question.id, question: question.prompt, ...(question.tags?.length ? { tags: Array.from(new Set(question.tags.map(tag => tag.trim().slice(0, 60)).filter(Boolean))).slice(0, 20) } : {}), images: question.images,
       options: question.options.map((option) => ({ id: option.id, text: option.text.trim() || undefined, images: option.images })),
       answer: question.answerIndex, explanation: question.explanation.trim() || undefined,
     })),
@@ -56,6 +57,7 @@ export function readDraft(json: string | null, sourceJson?: string): EditorExam 
     (image.description === undefined || typeof image.description === "string"));
   if (!exam || typeof exam.title !== "string" || typeof exam.description !== "string" || !Array.isArray(exam.questions) || !exam.questions.length) return;
   if (!exam.questions.every((question: EditorQuestion) => question && typeof question.id === "string" &&
+      (question.tags === undefined || Array.isArray(question.tags) && question.tags.every(tag => typeof tag === "string")) &&
       typeof question.prompt === "string" && typeof question.explanation === "string" && Number.isInteger(question.answerIndex) &&
       imagesValid(question.images) && Array.isArray(question.options) && question.options.length >= 2 &&
       question.options.every((option) => option && typeof option.id === "string" && typeof option.text === "string" && imagesValid(option.images)))) return;

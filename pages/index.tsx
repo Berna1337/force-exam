@@ -2,13 +2,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import {
   AddIcon, ChevronRightIcon, CloseIcon, HamburgerIcon,
-  EditIcon, SearchIcon, SmallCloseIcon, ViewIcon,
+  EditIcon, SearchIcon, SmallCloseIcon, ViewIcon, SettingsIcon,
 } from "@chakra-ui/icons";
 import {
   AlertDialog, AlertDialogBody, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogOverlay,
   Box, Button, Flex, Heading, HStack, IconButton,
-  SimpleGrid, Text, Tooltip, useToast,
+  SimpleGrid, Progress, Text, Tooltip, useToast,
 } from "@chakra-ui/react";
+import { unfinishedSessions } from "../lib/workspace";
+import { cleanSettings, type RunSettings } from "../lib/session";
+import BackupDialog, { type LibraryBackup } from "../components/BackupDialog";
+import Settings from "../components/Settings";
+import ProgressIcon from "../components/ProgressIcon";
+import { usePreferences } from "../contexts/Preferences";
+import ProgressDashboard from "../components/ProgressDashboard";
 import ExamRunner from "../components/ExamRunner";
 import ExamDetails from "../components/ExamDetails";
 import ExamOverview from "../components/ExamOverview";
@@ -18,7 +25,7 @@ import { normalizeExam, questionContent } from "../lib/exam";
 import { draftKey } from "../lib/editor";
 import { currentAttempts, ExamAttempt, ExamProgress, LIBRARY_KEY, percentage, progressLabel, readLibrary, reviseExam, SavedExam, switchExamVersion } from "../lib/study";
 import type { GitVersion } from "../lib/git";
-import { runMode, type RunMode } from "../lib/run";
+import { runMode, restoreReviewFlags, type FocusKind, type RunMode } from "../lib/run";
 import { makeExamPortable } from "../lib/images";
 import LibrarySidebar, { ArchiveGlyph, FolderGlyph } from "../components/LibrarySidebar";
 import CollectionDialog from "../components/CollectionDialog";
@@ -28,9 +35,10 @@ import OrganizationDialog from "../components/OrganizationDialog";
 import ExamOrganizationBar from "../components/ExamOrganizationBar";
 import { createFolder, examArchived, folderArchived, folderContains, folderEmpty, folderPath, FOLDERS_KEY, moveExam, moveFolder, readFolders, renameFolder, restoreExam, restoreFolder, type ExamFolder, type LibraryView, type OrganizationAction } from "../lib/organization";
 
-type WorkspaceTab = { id: string; title: string; initialJson?: string; initialProgress?: ExamProgress; libraryId?: string; kind?: "editor" | "overview"; gitCommit?: string; initialMode?: RunMode; folderId?: string };
+type WorkspaceTab = { id: string; title: string; initialJson?: string; initialProgress?: ExamProgress; libraryId?: string; kind?: "editor" | "overview"; gitCommit?: string; initialMode?: RunMode; settings?: RunSettings; focus?: FocusKind; focusedQuestionIds?: string[]; folderId?: string };
 
 export default function Home() {
+  const { refresh: refreshPreferences } = usePreferences();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [search, setSearch] = useState("");
   const [library, setLibrary] = useState<SavedExam[]>([]);
@@ -50,6 +58,8 @@ export default function Home() {
   const [organizationAction, setOrganizationAction] = useState<OrganizationAction | null>(null);
   const [collectionImportOpen, setCollectionImportOpen] = useState(false);
   const [exportingCollection, setExportingCollection] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
+  const restoringRef = useRef(false);
   const toast = useToast();
   const [pendingDelete, setPendingDelete] = useState<SavedExam | null>(null);
   const cancelDeleteRef = useRef<HTMLButtonElement>(null);
@@ -90,6 +100,7 @@ export default function Home() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector('[role="dialog"]')) return;
       if (!(event.ctrlKey || event.metaKey)) return;
       if (event.key.toLowerCase() === "o") {
         event.preventDefault();
@@ -119,9 +130,9 @@ export default function Home() {
     setActiveId(id);
   };
 
-  const startPractice = (exam: SavedExam, fresh: boolean, mode: RunMode) => {
+  const startPractice = (exam: SavedExam, fresh: boolean, mode: RunMode, options?: RunSettings) => {
     if (examArchived(exam, foldersRef.current)) { setStorageError("Restore this exam before starting a study session."); return; }
-    const existing = tabs.find((tab) => tab.libraryId === exam.id && !tab.kind);
+    const existing = tabs.find((tab) => tab.libraryId === exam.id && !tab.kind && !tab.focus);
     if (existing && !fresh && runMode(exam.progress?.mode ?? existing.initialMode) === mode) return setActiveId(existing.id);
     let progress = exam.progress;
     if (fresh) {
@@ -132,11 +143,21 @@ export default function Home() {
     }
     const id = crypto.randomUUID();
     setTabs((current) => [...current.filter((tab) => tab.id !== existing?.id), {
-      id, title: `${exam.title} · ${mode === "exam" ? "Exam" : "Practice"}`, libraryId: exam.id, initialJson: exam.json, initialProgress: progress, initialMode: mode,
+      id, title: `${exam.title} · ${mode === "exam" ? "Exam" : "Practice"}`, libraryId: exam.id, initialJson: exam.json, initialProgress: progress, initialMode: mode, settings: cleanSettings(options),
     }]);
     setActiveId(id);
   };
 
+  const startFocused = (exam: SavedExam, kind: FocusKind, ids: string[], resume = false) => {
+    if (examArchived(exam, foldersRef.current)) { setStorageError("Restore this exam before starting focused practice."); return; }
+    const questionIds = restoreReviewFlags(normalizeExam(JSON.parse(exam.json)).questions.map(question => question.id), ids);
+    if (!questionIds.length) { setStorageError("There are no questions in this practice set."); return; }
+    const existing = tabs.find(tab => tab.libraryId === exam.id && !tab.kind && !!tab.focus);
+    if (existing && resume) return setActiveId(existing.id);
+    const id = crypto.randomUUID();
+    setTabs(current => [...current.filter(tab => tab.id !== existing?.id), { id, title: `${exam.title} · Focused practice`, libraryId: exam.id, initialJson: exam.json, initialMode: "practice", initialProgress: resume ? exam.focusedProgress : undefined, focus: kind, focusedQuestionIds: questionIds }]);
+    setActiveId(id);
+  };
   const commitLibrary = (next: SavedExam[]) => {
     libraryRef.current = next;
     setLibrary(next);
@@ -243,12 +264,15 @@ export default function Home() {
     setActiveId(id);
   };
 
-  const updateProgress = (examId: string, progress: ExamProgress) => {
-    if (!libraryRef.current.some((exam) => exam.id === examId)) return;
-    commitLibrary(libraryRef.current.map((exam) => exam.id === examId ? { ...exam, progress, progressByRevision: { ...exam.progressByRevision, [exam.revision]: progress } } : exam));
+  const updateProgress = (examId: string, progress: ExamProgress, focused = false) => {
+    if (restoringRef.current || !libraryRef.current.some((exam) => exam.id === examId)) return;
+    commitLibrary(libraryRef.current.map((exam) => exam.id === examId ? focused
+      ? { ...exam, focusedProgress: progress, focusedProgressByRevision: { ...exam.focusedProgressByRevision, [exam.revision]: progress } }
+      : { ...exam, progress, progressByRevision: { ...exam.progressByRevision, [exam.revision]: progress } } : exam));
   };
 
   const recordAttempt = (examId: string, attempt: ExamAttempt) => {
+    if (restoringRef.current) return;
     commitLibrary(libraryRef.current.map((exam) => exam.id === examId ? {
       ...exam, attempts: [{ ...attempt, revision: exam.revision }, ...exam.attempts.filter((previous) => previous.id !== attempt.id)],
     } : exam));
@@ -276,6 +300,33 @@ export default function Home() {
     setPendingDelete(null);
   };
 
+  const openBackup = () => {
+    if (tabsRef.current.some(tab => tab.kind === "editor")) { setStorageError("Close exam editors before backing up or restoring. Their drafts are kept."); return; }
+    setBackupOpen(true);
+  };
+  const storageSnapshot = () => ({ ...Object.fromEntries(Object.keys(localStorage).filter(key => key.startsWith("force-exam-")).map(key => [key, localStorage.getItem(key)!])), [LIBRARY_KEY]: JSON.stringify(libraryRef.current), [FOLDERS_KEY]: JSON.stringify(foldersRef.current) });
+  const exportBackup = async () => { if (await window.examBackup?.export(storageSnapshot())) toast({ title: "Library backup saved", status: "success" }); };
+  const restoreBackup = async (backup: LibraryBackup) => {
+    if (!window.examBackup) throw new Error("Restoring requires the desktop app.");
+    const previous = Object.fromEntries(Object.keys(localStorage).filter(key => key.startsWith("force-exam-")).map(key => [key, localStorage.getItem(key)!])); let token: string | undefined;
+    restoringRef.current = true; setTabs([]); setActiveId("home");
+    const writeStorage = (values: Record<string, string>) => {
+      for (const key of Object.keys(localStorage)) if (key.startsWith("force-exam-")) localStorage.removeItem(key);
+      for (const [key, value] of Object.entries(values)) localStorage.setItem(key, value);
+    };
+    try {
+      token = await window.examBackup.begin(backup);
+      writeStorage(backup.storage);
+      await window.examBackup.finish(token, true); token = undefined;
+      const next = readLibrary(backup.storage[LIBRARY_KEY]), nextFolders = readFolders(backup.storage[FOLDERS_KEY]);
+      libraryRef.current = next; setLibrary(next); foldersRef.current = nextFolders; setFolders(nextFolders); setSelectedFolderId(undefined); setLibraryView("library"); setSearch(""); setStorageError("");
+      refreshPreferences();
+      toast({ title: "Library restored", status: "success" });
+    } catch (cause) {
+      if (token) { try { writeStorage(previous); } finally { await window.examBackup.finish(token, false); } }
+      throw cause;
+    } finally { restoringRef.current = false; }
+  };
   const exportFolder = async (folder: ExamFolder) => {
     if (exportingCollection) return;
     setExportingCollection(true);
@@ -405,79 +456,87 @@ export default function Home() {
   const filteredLibrary = scopedLibrary.filter(exam => exam.title.toLowerCase().includes(search.toLowerCase()) || folderPath(folders, exam.folderId).toLowerCase().includes(search.toLowerCase()));
   const visibleFolders = folders.filter(folder => folderArchived(folders, folder.id) === inArchive);
   const childFolders = visibleFolders.filter(folder => selectedFolderId ? folder.parentId === selectedFolderId : !folder.parentId || !visibleFolders.some(parent => parent.id === folder.parentId));
-  const workspaceTitle = selectedFolder ? folderPath(folders, selectedFolder.id) : inArchive ? "Archive" : "Workspace";
-  const attempts = scopedLibrary.flatMap((exam) => exam.attempts);
-  const inProgress = scopedLibrary.filter((exam) => exam.progress && !exam.progress.isReviewing).length;
-  const averageScore = attempts.length ? Math.round(attempts.reduce((total, attempt) => total + percentage(attempt), 0) / attempts.length) : undefined;
+  const workspaceTitle = activeId === "settings" ? "Settings" : activeId === "dashboard" ? "Progress" : selectedFolder ? folderPath(folders, selectedFolder.id) : inArchive ? "Archive" : "Workspace";
+  const resumable = inArchive ? [] : unfinishedSessions(filteredLibrary);
 
   return (
-    <Flex h="100dvh" overflow="hidden" direction="column" bg="#1e1e1e" color="#d4d4d4">
+    <Flex h="100dvh" overflow="hidden" direction="column" bg="var(--app-bg)" color="var(--text)">
       <Head><title>Force Exam</title><meta name="description" content="Your offline exam workspace." /></Head>
-      <TitleBar title={activeTab?.title ?? workspaceTitle} onCreate={() => openEditor()} onImport={newImport} onWorkspace={() => showLibrary("library")} onToggleSidebar={() => setSidebarOpen((open) => !open)} />
+      <TitleBar onSettings={() => setActiveId("settings")} onBackup={openBackup} onDashboard={() => setActiveId("dashboard")} title={activeTab?.title ?? workspaceTitle} onCreate={() => openEditor()} onImport={newImport} onWorkspace={() => showLibrary("library")} onToggleSidebar={() => setSidebarOpen((open) => !open)} />
       <Flex flex="1" minH={0}>
-        <Flex as="nav" aria-label="Workspace tools" w="48px" flexShrink={0} bg="#191919" borderRight="1px solid #2b2b2b" direction="column" align="center" py={3} gap={3}>
-          <Tooltip label="Workspace" placement="right"><IconButton aria-label="Workspace" icon={<ViewIcon />} variant="ghost" color={activeId === "home" ? "purple.300" : "#999"} onClick={() => showLibrary("library")} /></Tooltip>
+        <Flex as="nav" aria-label="Workspace tools" w="48px" flexShrink={0} bg="var(--chrome)" borderRight="1px solid var(--chrome)" direction="column" align="center" py={3} gap={3}>
+          <Tooltip label="Workspace" placement="right"><IconButton aria-label="Workspace" icon={<ViewIcon />} variant="ghost" color={activeId === "home" ? "var(--accent-text)" : "var(--muted)"} onClick={() => showLibrary("library")} /></Tooltip>
           <Tooltip label="Import exam (Ctrl / ⌘ O)" placement="right"><IconButton aria-label="Import a new exam" icon={<AddIcon />} variant="ghost" onClick={newImport} /></Tooltip>
           <Tooltip label="Create exam" placement="right"><IconButton aria-label="Create a new exam" icon={<EditIcon />} variant="ghost" onClick={() => openEditor()} /></Tooltip>
           <Tooltip label="Search exams" placement="right"><IconButton aria-label="Search exams" icon={<SearchIcon />} variant="ghost" onClick={() => { setSidebarOpen(true); requestAnimationFrame(() => searchRef.current?.focus()); }} /></Tooltip>
-          <Tooltip label="Archive" placement="right"><IconButton aria-label="Open archive" icon={<ArchiveGlyph />} variant="ghost" onClick={() => showLibrary("archive")} /></Tooltip>
+          <Tooltip label="Progress dashboard" placement="right"><IconButton aria-label="Progress dashboard" aria-current={activeId === "dashboard" ? "page" : undefined} icon={<ProgressIcon />} variant="ghost" color={activeId === "dashboard" ? "var(--accent-text)" : "var(--muted)"} onClick={() => setActiveId("dashboard")} /></Tooltip>
           <Box flex="1" />
-          <Text fontFamily="mono" fontSize="10px" color="#777" sx={{ writingMode: "vertical-rl" }} mb={2}>FORCE EXAM</Text>
+          <Tooltip label="Settings" placement="right"><IconButton aria-label="Settings" aria-current={activeId === "settings" ? "page" : undefined} icon={<SettingsIcon />} variant="ghost" color={activeId === "settings" ? "var(--accent-text)" : "var(--muted)"} onClick={() => setActiveId("settings")} /></Tooltip>
         </Flex>
 
         {sidebarOpen && <LibrarySidebar library={library} folders={folders} view={libraryView} selectedFolder={selectedFolderId} activeExam={activeTab?.libraryId} search={search} searchRef={searchRef} onSearch={setSearch} onHide={() => setSidebarOpen(false)} onView={showLibrary} onCreateExam={() => openEditor()} onImport={newImport} onImportCollection={() => setCollectionImportOpen(true)} onExportFolder={exportFolder} onOrganize={setOrganizationAction} onOpen={openExam} onEdit={openEditor} onDelete={setPendingDelete} onArchiveExam={toggleExamArchive} onArchiveFolder={toggleFolderArchive} onRemoveFolder={removeFolder} onDropExam={dropExam} onDropFolder={dropFolder} />}
 
         <Flex as="main" minW={0} flex="1" direction="column">
-          <HStack as="nav" aria-label="Open tabs" h="48px" minH="48px" spacing={0} bg="#191919" borderBottom="1px solid #303030" overflowX="auto" align="stretch">
+          <HStack as="nav" aria-label="Open tabs" h="48px" minH="48px" spacing={0} bg="var(--chrome)" borderBottom="1px solid var(--border)" overflowX="auto" align="stretch">
             {!sidebarOpen && <IconButton aria-label="Show sidebar" variant="ghost" icon={<HamburgerIcon />} alignSelf="center" mx={1} onClick={() => setSidebarOpen(true)} />}
-            <Button variant="ghost" flexShrink={0} h="full" borderRadius={0} borderRight="1px solid #303030" borderTop={activeId === "home" ? "2px solid #a78bfa" : "2px solid transparent"} bg={activeId === "home" ? "#1e1e1e" : "transparent"} fontSize="xs" px={5} fontWeight="400" onClick={() => setActiveId("home")}>Workspace</Button>
+            <Button variant="ghost" flexShrink={0} h="full" borderRadius={0} borderRight="1px solid var(--border)" borderTop={activeId === "home" ? "2px solid var(--accent)" : "2px solid transparent"} bg={activeId === "home" ? "var(--app-bg)" : "transparent"} fontSize="xs" px={5} fontWeight="400" onClick={() => showLibrary("library")}>Workspace</Button>
             {tabs.map((tab) => (
-              <HStack key={tab.id} role="group" spacing={1} flexShrink={0} maxW="230px" borderRight="1px solid #303030" borderTop={activeId === tab.id ? "2px solid #a78bfa" : "2px solid transparent"} bg={activeId === tab.id ? "#1e1e1e" : "transparent"} pl={1} pr={2}>
+              <HStack key={tab.id} role="group" spacing={1} flexShrink={0} maxW="230px" borderRight="1px solid var(--border)" borderTop={activeId === tab.id ? "2px solid var(--accent)" : "2px solid transparent"} bg={activeId === tab.id ? "var(--app-bg)" : "transparent"} pl={1} pr={2}>
                 <Button variant="ghost" fontSize="xs" fontWeight="400" minW={0} h="full" onClick={() => setActiveId(tab.id)}><Text noOfLines={1}>{tab.title}</Text></Button>
                 <IconButton aria-label={`Close ${tab.title}`} variant="ghost" size="xs" icon={<SmallCloseIcon />} onClick={() => closeTab(tab.id)} />
               </HStack>
             ))}
             <IconButton aria-label="New exam tab" variant="ghost" size="sm" alignSelf="center" mx={2} flexShrink={0} icon={<AddIcon boxSize={3} />} onClick={newImport} />
           </HStack>
-          <HStack px={{ base: 4, md: 7 }} h="42px" minH="42px" fontSize="xs" color="#777" borderBottom="1px solid #292929"><Text>Workspace</Text><ChevronRightIcon /><Text color="#b0b0b0" noOfLines={1}>{activeTab?.title ?? workspaceTitle}</Text></HStack>
-          {storageError && <HStack role="alert" px={5} py={2} bg="#44351e" fontSize="xs"><Text flex="1">{storageError}</Text><IconButton size="xs" variant="ghost" aria-label="Dismiss storage message" icon={<CloseIcon boxSize={2} />} onClick={() => setStorageError("")} /></HStack>}
+          <HStack px={{ base: 4, md: 7 }} h="42px" minH="42px" fontSize="xs" color="var(--muted)" borderBottom="1px solid var(--chrome)"><Text>Workspace</Text><ChevronRightIcon /><Text color="var(--muted)" noOfLines={1}>{activeTab?.title ?? workspaceTitle}</Text></HStack>
+          {storageError && <HStack role="alert" px={5} py={2} bg="var(--warning-soft)" fontSize="xs"><Text flex="1">{storageError}</Text><IconButton size="xs" variant="ghost" aria-label="Dismiss storage message" icon={<CloseIcon boxSize={2} />} onClick={() => setStorageError("")} /></HStack>}
           <Box flex="1" minH={0} overflowY="auto" px={{ base: 4, md: 8, xl: 14 }} py={{ base: 6, md: 10 }}>
             <Box maxW="1040px" mx="auto">
+              {activeId === "settings" && <Settings onBackup={openBackup} />}
+              {activeId === "dashboard" && <ProgressDashboard library={library} />}
               {activeId === "home" && (
-                <Box maxW="720px" mx="auto" pt={{ base: 2, md: 8 }}>
+                <Box maxW="860px" mx="auto">
                   <Flex justify="space-between" align="center" gap={4} mb={4}>
-                    <Text fontFamily="mono" color="#a78bfa" fontSize="xs" letterSpacing=".12em">{inArchive ? "YOUR ARCHIVE" : selectedFolder ? "EXAM FOLDER" : "YOUR STUDY WORKSPACE"}</Text>
-                    {selectedFolder && <Button variant="ghost" size="xs" color={inArchive ? "purple.200" : "#999"} flexShrink={0} leftIcon={<ArchiveGlyph />} onClick={() => toggleFolderArchive(selectedFolder)}>{inArchive ? "Restore folder" : "Archive folder"}</Button>}
+                    <Text fontFamily="mono" color="var(--accent)" fontSize="xs" letterSpacing=".12em">{inArchive ? "YOUR ARCHIVE" : selectedFolder ? "EXAM FOLDER" : "YOUR STUDY WORKSPACE"}</Text>
+                    {selectedFolder && <Button variant="ghost" size="xs" color={inArchive ? "var(--accent-text)" : "var(--muted)"} flexShrink={0} leftIcon={<ArchiveGlyph />} onClick={() => toggleFolderArchive(selectedFolder)}>{inArchive ? "Restore folder" : "Archive folder"}</Button>}
                   </Flex>
-                  <Heading fontSize={{ base: "28px", md: "36px" }} fontWeight="500" letterSpacing="-.04em" color="#eee">{selectedFolder?.name ?? (inArchive ? "Archive" : "A little focus. A lot of progress.")}</Heading>
-                  <Text color="#909090" mt={4} fontSize="sm" lineHeight="1.9" maxW="540px">{inArchive ? "Your archived exams keep their content, versions, scores, and saved progress. Restore them whenever you need them again." : selectedFolder ? "Exams in this folder and its subfolders. Create or import an exam here, or move existing exams into this folder." : "Keep your exams together, open a practice session, and work at your own pace. Everything stays on this device."}</Text>
+                  <Heading fontSize="24px" fontWeight="500" letterSpacing="-.04em" color="var(--text)">{selectedFolder?.name ?? (inArchive ? "Archive" : "Workspace")}</Heading>
+                  {(inArchive || selectedFolder) && <Text color="var(--muted)" mt={3} fontSize="sm">{inArchive ? "Archived exams keep their content, versions, scores, and saved progress." : "Exams in this folder and its subfolders."}</Text>}
+                  {resumable.length > 0 && <Box as="section" aria-label="Continue studying" mt={6}>
+                    <Heading size="sm" fontWeight="500" mb={3}>Continue studying</Heading>
+                    <SimpleGrid columns={{ base: 1, lg: 3 }} gap={3}>
+                      {resumable.map(({ exam, progress, focused, total, answered }) => <Box key={`${exam.id}-${focused}`} p={4} bg="var(--surface)" border="1px solid var(--border)" borderRadius="lg">
+                        <Text fontSize="sm" fontWeight="600" noOfLines={2} title={exam.title}>{exam.title}</Text>
+                        <Text mt={2} fontSize="xs" color="var(--muted)">{focused ? 'Focused practice' : runMode(progress.mode) === 'exam' ? 'Exam mode' : 'Practice mode'} · {answered}/{total} answered</Text>
+                        <Progress mt={3} value={total ? answered / total * 100 : 0} size="xs" borderRadius="full" colorScheme="purple" aria-label={`Progress for ${exam.title}`} />
+                        <Button mt={4} size="sm" variant="outline" w="full" aria-label={`Resume ${exam.title}${focused ? ' focused practice' : ''}`} onClick={() => focused ? startFocused(exam, progress.focus!, progress.focusedQuestionIds ?? [], true) : startPractice(exam, false, runMode(progress.mode))}>Resume</Button>
+                      </Box>)}
+                    </SimpleGrid>
+                  </Box>}
                   {(!inArchive || selectedFolder) && <HStack mt={7} spacing={3} flexWrap="wrap">
                     {!inArchive && <>
-                      <Button colorScheme="purple" size="sm" leftIcon={<EditIcon boxSize={3} />} onClick={() => openEditor()}>Create exam</Button>
+                      <Button className="primary-action" colorScheme="purple" size="sm" leftIcon={<EditIcon boxSize={3} />} onClick={() => openEditor()}>Create exam</Button>
                       <Button variant="outline" size="sm" leftIcon={<AddIcon boxSize={3} />} onClick={newImport}>Import exam</Button>
                       <Button variant="outline" size="sm" leftIcon={<FolderGlyph />} onClick={() => setCollectionImportOpen(true)}>Import collection</Button>
                       <Button size="sm" variant="outline" leftIcon={<FolderGlyph />} onClick={() => setOrganizationAction({ type: "create", parentId: selectedFolderId })}>New folder</Button>
                     </>}
                     {selectedFolder && <Button variant="outline" size="sm" leftIcon={<FolderGlyph />} isLoading={exportingCollection} loadingText="Exporting folder" onClick={() => exportFolder(selectedFolder)}>Export folder</Button>}
                   </HStack>}
-                  <SimpleGrid columns={{ base: 1, md: 3 }} gap={4} mt={9}>
-                    {[{ label: "IN PROGRESS", value: inProgress }, { label: "COMPLETED ATTEMPTS", value: attempts.length }, { label: "AVERAGE SCORE", value: averageScore === undefined ? "—" : `${averageScore}%` }].map((stat) => <Box key={stat.label} p={4} bg="#252525" border="1px solid #333" borderRadius="md"><Text fontSize="10px" color="#888" letterSpacing=".06em">{stat.label}</Text><Text mt={2} fontSize="24px" color="purple.200">{stat.value}</Text></Box>)}
-                  </SimpleGrid>
                   {childFolders.length > 0 && <SimpleGrid columns={{ base: 1, md: 2 }} gap={3} mt={7}>{childFolders.map(folder => <Button key={folder.id} variant="outline" h="auto" py={4} justifyContent="flex-start" leftIcon={<FolderGlyph />} onClick={() => showLibrary(libraryView, folder.id)}><Text fontSize="sm" noOfLines={1}>{folder.name}</Text></Button>)}</SimpleGrid>}
-                  <HStack mt={8} mb={3} justify="space-between"><Text fontSize="11px" fontWeight="600" letterSpacing=".1em" color="#888">{inArchive ? "ARCHIVED EXAMS" : "EXAM LIBRARY"}</Text><Text color="#666" fontSize="xs">{filteredLibrary.length} {inArchive ? "archived" : "saved"}</Text></HStack>
+                  <HStack mt={8} mb={3} justify="space-between"><Text fontSize="11px" fontWeight="600" letterSpacing=".1em" color="var(--muted)">{inArchive ? "ARCHIVED EXAMS" : "EXAM LIBRARY"}</Text><Text color="var(--muted)" fontSize="xs">{filteredLibrary.length} {inArchive ? "archived" : "saved"}</Text></HStack>
                   {filteredLibrary.length ? filteredLibrary.map((exam) => (
-                    <Button key={exam.id} variant="ghost" w="full" h="auto" py={4} px={2} justifyContent="space-between" borderRadius={0} borderBottom="1px solid #303030" onClick={() => openExam(exam)}><HStack spacing={3}><Text color="#a78bfa">▤</Text><Box textAlign="left" minW={0}><Text fontSize="sm" fontWeight="400" noOfLines={1}>{exam.title}</Text><Text fontSize="11px" color="#888" fontWeight="400" mt={1}>{inArchive ? `Archived · ${folderPath(folders, exam.folderId) || "Library root"}` : progressLabel(exam)}</Text></Box></HStack><Text color="#999" fontSize="xs" fontWeight="400" ml={4}>{currentAttempts(exam).length ? `Best ${Math.max(...currentAttempts(exam).map(percentage))}%` : `${exam.questionCount} questions`} <ChevronRightIcon /></Text></Button>
-                  )) : <Box border="1px dashed #3a3a3a" borderRadius="md" p={7}><Text fontSize="sm" color="#aaa">{inArchive ? "Your archive is empty." : search ? "No matching exams." : selectedFolder ? "No exams in this folder yet." : "Make room for your next exam."}</Text><Text fontSize="xs" color="#777" mt={2} lineHeight="1.8">{inArchive ? "Use an exam or folder’s ⋯ menu to archive it. Restore it here at any time." : "Create an exam in the visual editor, import a JSON file, or move one here from another folder."}</Text></Box>}
-                  <HStack mt={8} gap={6} flexWrap="wrap" fontSize="11px" color="#777"><Text>◎ Works offline</Text><Text>▤ JSON exam files</Text><Text>↗ Pick up from your library</Text></HStack>
+                    <Button key={exam.id} className="library-exam" variant="ghost" w="full" h="auto" py={4} px={4} mb={2} justifyContent="space-between" borderRadius="lg" border="1px solid var(--border)" bg="var(--surface)" onClick={() => openExam(exam)}><HStack spacing={3} minW={0} flex="1"><Text color="var(--accent)">▤</Text><Box textAlign="left" minW={0}><Text fontSize="sm" fontWeight="400" noOfLines={1}>{exam.title}</Text><Text fontSize="11px" color="var(--muted)" fontWeight="400" mt={1}>{inArchive ? `Archived · ${folderPath(folders, exam.folderId) || "Library root"}` : progressLabel(exam)}</Text></Box></HStack><HStack spacing={3} ml={4} flexShrink={0}>{currentAttempts(exam).length ? <Box textAlign="right"><Text fontSize="10px" color="var(--muted)" fontWeight="400">Best score</Text><Text color="var(--success)" fontSize="xl" fontWeight="600">{Math.max(...currentAttempts(exam).map(percentage))}%</Text></Box> : <Text color="var(--muted)" fontSize="xs" fontWeight="400">{exam.questionCount} questions</Text>}<ChevronRightIcon color="var(--muted)" /></HStack></Button>
+                  )) : <Box border="1px dashed var(--border)" borderRadius="md" p={7}><Text fontSize="sm" color="var(--muted)">{inArchive ? "Your archive is empty." : search ? "No matching exams." : selectedFolder ? "No exams in this folder yet." : "Make room for your next exam."}</Text><Text fontSize="xs" color="var(--muted)" mt={2} lineHeight="1.8">{inArchive ? "Use an exam or folder’s ⋯ menu to archive it. Restore it here at any time." : "Create an exam in the visual editor, import a JSON file, or move one here from another folder."}</Text></Box>}
                 </Box>
               )}
               {tabs.map((tab) => {
                 const exam = library.find((item) => item.id === tab.libraryId);
+                const session = tab.focus ? exam?.focusedProgress : exam?.progress;
                 return <Box key={tab.id} display={activeId === tab.id ? "block" : "none"}>
-                  {exam && (tab.kind === "overview" || (!tab.kind && exam.progress?.isReviewing)) && <ExamOrganizationBar folder={folderPath(folders, exam.folderId) || "Library root"} archived={examArchived(exam, folders)} onMove={() => setOrganizationAction({ type: "move-exam", exam })} onArchive={() => toggleExamArchive(exam)} />}
-                  {tab.kind === "editor" ? <ExamEditor examId={tab.libraryId} initialJson={tab.initialJson} gitCommit={tab.gitCommit} onSave={(json) => saveEditor(tab, json)} onClose={() => closeTab(tab.id)} /> : tab.kind === "overview" && exam ? <ExamOverview exam={exam} isArchived={examArchived(exam, folders)} onStudy={(fresh, mode) => startPractice(exam, fresh, mode)} onEdit={() => openEditor(exam)} onDelete={() => setPendingDelete(exam)} onEnsureHistory={ensureGitHistory} onSwitchVersion={switchVersion} /> : <>
-                    {exam?.progress?.isReviewing && <ExamDetails exam={exam} isArchived={examArchived(exam, folders)} onEnsureHistory={ensureGitHistory} onSwitchVersion={switchVersion} onEdit={() => openEditor(exam)} onDelete={() => setPendingDelete(exam)} />}
-                    <ExamRunner initialJson={tab.initialJson} initialProgress={tab.initialProgress} initialMode={tab.initialMode} onOverview={() => { if (exam) openExam(exam); }} onBack={() => closeTab(tab.id)} onExamImported={(title, json, count) => saveExam(tab.id, title, json, count)} onProgressChange={(progress) => { if (tab.libraryId) updateProgress(tab.libraryId, progress); }} onAttemptComplete={(attempt) => { if (tab.libraryId) recordAttempt(tab.libraryId, attempt); }} />
+                  {exam && (tab.kind === "overview" || (!tab.kind && session?.isReviewing)) && <ExamOrganizationBar folder={folderPath(folders, exam.folderId) || "Library root"} archived={examArchived(exam, folders)} onMove={() => setOrganizationAction({ type: "move-exam", exam })} onArchive={() => toggleExamArchive(exam)} />}
+                  {tab.kind === "editor" ? <ExamEditor examId={tab.libraryId} initialJson={tab.initialJson} gitCommit={tab.gitCommit} onSave={(json) => saveEditor(tab, json)} onClose={() => closeTab(tab.id)} /> : tab.kind === "overview" && exam ? <ExamOverview exam={exam} isArchived={examArchived(exam, folders)} onStudy={(fresh, mode, settings) => startPractice(exam, fresh, mode, settings)} onFocused={(kind, ids) => startFocused(exam, kind, ids)} onResumeFocused={() => { if (exam.focusedProgress?.focus) startFocused(exam, exam.focusedProgress.focus, exam.focusedProgress.focusedQuestionIds ?? [], true); }} onEdit={() => openEditor(exam)} onDelete={() => setPendingDelete(exam)} onEnsureHistory={ensureGitHistory} onSwitchVersion={switchVersion} /> : <>
+                    <ExamRunner isActive={activeId === tab.id} settings={tab.settings} initialFocus={tab.focus} initialFocusedQuestionIds={tab.focusedQuestionIds} onFocused={(kind, ids) => { if (exam) startFocused(exam, kind, ids); }} initialJson={tab.initialJson} initialProgress={tab.initialProgress} initialMode={tab.initialMode} onOverview={() => { if (exam) openExam(exam); }} onBack={() => closeTab(tab.id)} onExamImported={(title, json, count) => saveExam(tab.id, title, json, count)} onProgressChange={(progress) => { if (tab.libraryId) updateProgress(tab.libraryId, progress, !!tab.focus); }} onAttemptComplete={(attempt) => { if (tab.libraryId) recordAttempt(tab.libraryId, attempt); }} />
+                    {exam && session?.isReviewing && <Box mt={6}><ExamDetails exam={exam} isArchived={examArchived(exam, folders)} onEnsureHistory={ensureGitHistory} onSwitchVersion={switchVersion} onEdit={() => openEditor(exam)} onDelete={() => setPendingDelete(exam)} /></Box>}
                   </>}
                 </Box>;
               })}
@@ -485,12 +544,13 @@ export default function Home() {
           </Box>
         </Flex>
       </Flex>
+      {backupOpen && <BackupDialog onClose={() => setBackupOpen(false)} onExport={exportBackup} onRestore={restoreBackup} />}
       {collectionImportOpen && <CollectionDialog folders={folders} initialFolder={selectedFolderId} initialArchived={libraryView === "archive"} onClose={() => setCollectionImportOpen(false)} onImport={importCollection} />}
       <OrganizationDialog action={organizationAction} folders={folders} onClose={() => setOrganizationAction(null)} onSave={saveOrganization} />
       <AlertDialog isOpen={!!pendingDelete} leastDestructiveRef={cancelDeleteRef} onClose={() => setPendingDelete(null)} isCentered>
-        <AlertDialogOverlay><AlertDialogContent mx={4} bg="#252525"><AlertDialogHeader>Delete exam?</AlertDialogHeader><AlertDialogBody><Text>Delete “{pendingDelete?.title}” and its saved progress, scores, and Git version history from this device?</Text><Text color="#999" fontSize="sm" mt={3}>Your original JSON file is kept.</Text></AlertDialogBody><AlertDialogFooter gap={3}><Button ref={cancelDeleteRef} onClick={() => setPendingDelete(null)}>Keep exam</Button><Button colorScheme="red" onClick={deleteExam}>Delete permanently</Button></AlertDialogFooter></AlertDialogContent></AlertDialogOverlay>
+        <AlertDialogOverlay><AlertDialogContent mx={4} bg="var(--surface)"><AlertDialogHeader>Delete exam?</AlertDialogHeader><AlertDialogBody><Text>Delete “{pendingDelete?.title}” and its saved progress, scores, and Git version history from this device?</Text><Text color="var(--muted)" fontSize="sm" mt={3}>Your original JSON file is kept.</Text></AlertDialogBody><AlertDialogFooter gap={3}><Button ref={cancelDeleteRef} onClick={() => setPendingDelete(null)}>Keep exam</Button><Button colorScheme="red" onClick={deleteExam}>Delete permanently</Button></AlertDialogFooter></AlertDialogContent></AlertDialogOverlay>
       </AlertDialog>
-      <HStack as="footer" h="26px" minH="26px" px={4} spacing={4} borderTop="1px solid #303030" bg="#191919" fontSize="10px" color="#777"><Text>Force Exam</Text><Text flex="1" /><Text>{tabs.length} open {tabs.length === 1 ? "tab" : "tabs"}</Text><Text role="status">{storageError ? "Changes not saved" : "Progress and scores saved locally"}</Text></HStack>
+      <HStack as="footer" h="26px" minH="26px" px={4} spacing={4} borderTop="1px solid var(--border)" bg="var(--chrome)" fontSize="10px" color="var(--muted)"><Text>Force Exam</Text><Text flex="1" /><Text>{tabs.length} open {tabs.length === 1 ? "tab" : "tabs"}</Text><Text role="status">{storageError ? "Changes not saved" : "Progress and scores saved locally"}</Text></HStack>
     </Flex>
   );
 }

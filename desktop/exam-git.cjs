@@ -30,6 +30,7 @@ function createExamGit(root) {
     message: commit.message.split('\n')[0], createdAt: new Date(commit.author.timestamp * 1000).toISOString(),
   })));
   return {
+    idle: () => Promise.allSettled(Array.from(pending.values())),
     list: (id) => queued(id, history),
     read: (id, oid) => queued(id, async (dir) => {
       if (typeof oid !== 'string' || !/^[a-f0-9]{40}$/.test(oid)) throw new Error('Invalid version.');

@@ -1,4 +1,5 @@
 const { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } = require('electron');
+const { createBackupStore, validateBackup, LIMIT: BACKUP_LIMIT } = require('./backup.cjs');
 const { createExamGit } = require('./exam-git.cjs');
 const { prepareExamExport, prepareCollectionExport } = require('./export.cjs');
 const { downloadImage, createNetImageFetch } = require('./images.cjs');
@@ -108,11 +109,32 @@ function startApp() {
       return { saved: true };
     });
     const examGit = createExamGit(path.join(app.getPath('userData'), 'exam-repositories'));
+    const backups = createBackupStore(path.join(app.getPath('userData'), 'exam-repositories'));
+    const trusted = event => { if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame || event.senderFrame.url !== APP_URL) throw new Error('Backups are only available to the local workspace.'); };
+    ipcMain.handle('exam-backup:export', async (event, storage) => {
+      trusted(event);
+      const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), { title: 'Back up entire library', properties: ['showOverwriteConfirmation'], defaultPath: `Force-Exam-Backup-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'Force Exam backup', extensions: ['json'] }] });
+      if (result.canceled || !result.filePath) return false;
+      await examGit.idle();
+      const backup = await backups.capture(storage);
+      await require('node:fs/promises').writeFile(result.filePath, JSON.stringify(backup), { mode: 0o600 }); return true;
+    });
+    ipcMain.handle('exam-backup:read', async event => {
+      trusted(event);
+      const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), { title: 'Choose library backup', properties: ['openFile'], filters: [{ name: 'Force Exam backup', extensions: ['json'] }] });
+      if (result.canceled || !result.filePaths[0]) return null;
+      const file = result.filePaths[0];
+      if ((await stat(file)).size > BACKUP_LIMIT) throw new Error('Backup exceeds 250 MB.');
+      return validateBackup(JSON.parse(await require('node:fs/promises').readFile(file, 'utf8')));
+    });
+    ipcMain.handle('exam-backup:begin', async (event, backup) => { trusted(event); await examGit.idle(); return backups.begin(backup); });
+    ipcMain.handle('exam-backup:finish', (event, token, commit) => { trusted(event); return backups.finish(token, commit === true); });
     for (const method of ['save', 'list', 'read', 'remove']) {
       ipcMain.handle(`exam-git:${method}`, (event, ...args) => {
         if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame || event.senderFrame.url !== APP_URL) {
           throw new Error('Exam history is only available to the local workspace.');
         }
+        if (backups.isRestoring()) throw new Error("Finish restoring the backup before using exam versions.");
         return examGit[method](...args);
       });
     }

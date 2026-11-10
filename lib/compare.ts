@@ -1,7 +1,7 @@
 import type { Exam, ExamOption, ExamQuestion } from "./exam";
 
 const optionContent = (option: ExamOption) => ({ text: option.text, images: option.images });
-const content = (question: ExamQuestion) => ({ prompt: question.prompt, images: question.images,
+const content = (question: ExamQuestion) => ({ prompt: question.prompt, tags: question.tags ?? [], images: question.images,
   options: question.options.map(optionContent), answerIndex: question.answerIndex, explanation: question.explanation });
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const dice = (a: string[], b: string[]) => {
@@ -83,6 +83,7 @@ export function compareExams(before: Exam, after: Exam) {
       !equal(question.options.map(optionContent), next.options.map(optionContent)) && "Answer choices",
       (question.answerIndex !== next.answerIndex || !equal(optionContent(question.options[question.answerIndex]), optionContent(next.options[next.answerIndex]))) && "Correct answer",
       question.explanation !== next.explanation && "Explanation",
+      !equal(question.tags ?? [], next.tags ?? []) && "Topics / tags",
     ].filter((value): value is string => !!value);
     const moved = matched.moved.has(i);
     if (!fields.length && !moved) unchanged++;

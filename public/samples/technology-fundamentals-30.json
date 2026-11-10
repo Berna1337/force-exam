@@ -1,0 +1,426 @@
+{
+  "title": "Technology Fundamentals \u2014 30-question sample",
+  "description": "An original testing exam: 30 questions across Web, Data, Security, Programming, Networking, and Version control. Includes explanations and balanced answer positions. Try a 70% passing score (21/30), topic pools, instant feedback, or a timed exam.",
+  "questions": [
+    {
+      "question": "What does HTTP primarily define?",
+      "options": [
+        "Communication between web clients and servers",
+        "How CPUs execute instructions",
+        "How passwords are encrypted",
+        "How files are compressed"
+      ],
+      "answer": 0,
+      "explanation": "HTTP defines request and response messages exchanged by web clients and servers.",
+      "tags": [
+        "Web"
+      ]
+    },
+    {
+      "question": "Which HTML element represents a hyperlink?",
+      "options": [
+        "p",
+        "a",
+        "section",
+        "strong"
+      ],
+      "answer": 1,
+      "explanation": "An anchor element with an href attribute links to another resource.",
+      "tags": [
+        "Web"
+      ]
+    },
+    {
+      "question": "What is CSS used for?",
+      "options": [
+        "Storing database records",
+        "Routing network packets",
+        "Styling and laying out documents",
+        "Compiling JavaScript"
+      ],
+      "answer": 2,
+      "explanation": "CSS controls the presentation and layout of HTML content.",
+      "tags": [
+        "Web"
+      ]
+    },
+    {
+      "question": "Which HTTP status code normally means a resource was not found?",
+      "options": [
+        "200",
+        "201",
+        "500",
+        "404"
+      ],
+      "answer": 3,
+      "explanation": "404 means the requested resource could not be found.",
+      "tags": [
+        "Web"
+      ]
+    },
+    {
+      "question": "What does HTTPS add to HTTP?",
+      "options": [
+        "Transport encryption and authentication through TLS",
+        "A guarantee that all content is truthful",
+        "Automatic database backups",
+        "Unlimited bandwidth"
+      ],
+      "answer": 0,
+      "explanation": "TLS protects data in transit and authenticates the server using certificates.",
+      "tags": [
+        "Web"
+      ]
+    },
+    {
+      "question": "Which JSON value is a boolean?",
+      "options": [
+        "\"true\"",
+        "true",
+        "42",
+        "null"
+      ],
+      "answer": 1,
+      "explanation": "An unquoted true or false is a JSON boolean; a quoted value is a string.",
+      "tags": [
+        "Data"
+      ]
+    },
+    {
+      "question": "Which SQL clause filters rows before grouping?",
+      "options": [
+        "ORDER BY",
+        "GROUP BY",
+        "WHERE",
+        "SELECT"
+      ],
+      "answer": 2,
+      "explanation": "WHERE applies row conditions before GROUP BY; HAVING filters groups.",
+      "tags": [
+        "Data"
+      ]
+    },
+    {
+      "question": "What is a primary key intended to do?",
+      "options": [
+        "Encrypt every column",
+        "Sort every query automatically",
+        "Duplicate records",
+        "Uniquely identify each row"
+      ],
+      "answer": 3,
+      "explanation": "A primary key uniquely identifies a row and cannot be null.",
+      "tags": [
+        "Data"
+      ]
+    },
+    {
+      "question": "Which data structure follows first in, first out?",
+      "options": [
+        "Queue",
+        "Stack",
+        "Set",
+        "Tree"
+      ],
+      "answer": 0,
+      "explanation": "A queue removes items in the order they were added.",
+      "tags": [
+        "Data"
+      ]
+    },
+    {
+      "question": "Which format commonly stores tabular data as delimited text?",
+      "options": [
+        "PNG",
+        "CSV",
+        "MP3",
+        "ZIP"
+      ],
+      "answer": 1,
+      "explanation": "CSV represents rows as lines and fields as comma-separated values.",
+      "tags": [
+        "Data"
+      ]
+    },
+    {
+      "question": "What is the principle of least privilege?",
+      "options": [
+        "Give everyone administrator access",
+        "Never allow anyone to sign in",
+        "Grant only the access needed for a task",
+        "Use the same password everywhere"
+      ],
+      "answer": 2,
+      "explanation": "Limiting permissions reduces the impact of mistakes or compromised accounts.",
+      "tags": [
+        "Security"
+      ]
+    },
+    {
+      "question": "Which is an example of two different authentication factors?",
+      "options": [
+        "Two passwords",
+        "A password and a PIN",
+        "Two security questions",
+        "A password and a physical security key"
+      ],
+      "answer": 3,
+      "explanation": "A password is something you know; a physical security key is something you have.",
+      "tags": [
+        "Security"
+      ]
+    },
+    {
+      "question": "What is phishing?",
+      "options": [
+        "Deceptive messages designed to steal information or access",
+        "Compressing files for storage",
+        "Scanning a document",
+        "Creating a secure backup"
+      ],
+      "answer": 0,
+      "explanation": "Phishing impersonates a trusted source to trick someone into revealing information or taking an unsafe action.",
+      "tags": [
+        "Security"
+      ]
+    },
+    {
+      "question": "What is a password manager useful for?",
+      "options": [
+        "Making all websites trustworthy",
+        "Generating and storing unique passwords",
+        "Removing the need for updates",
+        "Sharing one password across accounts"
+      ],
+      "answer": 1,
+      "explanation": "A password manager helps create and keep distinct strong passwords for each account.",
+      "tags": [
+        "Security"
+      ]
+    },
+    {
+      "question": "Why should important backups be tested?",
+      "options": [
+        "To make the backup file larger",
+        "To replace all security updates",
+        "To confirm the data can actually be restored",
+        "To remove the original data"
+      ],
+      "answer": 2,
+      "explanation": "A backup is useful only if it can be restored successfully.",
+      "tags": [
+        "Security"
+      ]
+    },
+    {
+      "question": "What does a loop do?",
+      "options": [
+        "Always ends a program",
+        "Encrypts all variables",
+        "Creates only one constant",
+        "Repeats a block of instructions"
+      ],
+      "answer": 3,
+      "explanation": "Loops repeat instructions according to a condition or a collection.",
+      "tags": [
+        "Programming"
+      ]
+    },
+    {
+      "question": "What is a function parameter?",
+      "options": [
+        "A named input accepted by a function",
+        "The final compiled program",
+        "A required error message",
+        "A database backup"
+      ],
+      "answer": 0,
+      "explanation": "Parameters define the inputs that a function can receive from a caller.",
+      "tags": [
+        "Programming"
+      ]
+    },
+    {
+      "question": "What does a unit test usually check?",
+      "options": [
+        "Only the color of the entire app",
+        "A small isolated piece of behavior",
+        "Every production user at once",
+        "Only the network speed"
+      ],
+      "answer": 1,
+      "explanation": "Unit tests check focused behavior, commonly at the function or component level.",
+      "tags": [
+        "Programming"
+      ]
+    },
+    {
+      "question": "What does an immutable value mean?",
+      "options": [
+        "It must be a number",
+        "It cannot be read",
+        "It cannot be changed after creation",
+        "It is always stored on disk"
+      ],
+      "answer": 2,
+      "explanation": "Immutable values cannot be altered in place; changes require a new value.",
+      "tags": [
+        "Programming"
+      ]
+    },
+    {
+      "question": "What is a syntax error?",
+      "options": [
+        "A slow internet connection",
+        "A full disk",
+        "An incorrect screen brightness",
+        "Code that violates the language grammar"
+      ],
+      "answer": 3,
+      "explanation": "Syntax errors prevent code from being parsed according to the language rules.",
+      "tags": [
+        "Programming"
+      ]
+    },
+    {
+      "question": "What does DNS commonly translate?",
+      "options": [
+        "Domain names into IP addresses",
+        "Images into audio",
+        "Passwords into permissions",
+        "Source code into machine code"
+      ],
+      "answer": 0,
+      "explanation": "DNS resolves domain names to records such as the IP addresses used to reach servers.",
+      "tags": [
+        "Networking"
+      ]
+    },
+    {
+      "question": "What does a router do?",
+      "options": [
+        "Only displays web pages",
+        "Forwards packets between networks",
+        "Only stores passwords",
+        "Compiles all applications"
+      ],
+      "answer": 1,
+      "explanation": "Routers direct packets between networks based on routing information.",
+      "tags": [
+        "Networking"
+      ]
+    },
+    {
+      "question": "What is latency?",
+      "options": [
+        "The total size of a file",
+        "The number of pixels on a screen",
+        "The delay before data or a response arrives",
+        "The amount of free disk space"
+      ],
+      "answer": 2,
+      "explanation": "Latency measures delay, commonly in milliseconds.",
+      "tags": [
+        "Networking"
+      ]
+    },
+    {
+      "question": "Which address refers to the local machine in IPv4?",
+      "options": [
+        "8.8.8.8",
+        "1.1.1.1",
+        "192.0.2.1",
+        "127.0.0.1"
+      ],
+      "answer": 3,
+      "explanation": "127.0.0.1 is the standard IPv4 loopback address.",
+      "tags": [
+        "Networking"
+      ]
+    },
+    {
+      "question": "Which protocol provides reliable ordered byte delivery?",
+      "options": [
+        "TCP",
+        "UDP",
+        "IP alone",
+        "ARP"
+      ],
+      "answer": 0,
+      "explanation": "TCP provides an ordered byte stream with retransmission and other reliability mechanisms.",
+      "tags": [
+        "Networking"
+      ]
+    },
+    {
+      "question": "What does a Git commit record?",
+      "options": [
+        "Only the current screen size",
+        "A snapshot of tracked content and metadata",
+        "Every file on the device automatically",
+        "A new internet connection"
+      ],
+      "answer": 1,
+      "explanation": "A commit records a project snapshot together with metadata and parent relationships.",
+      "tags": [
+        "Version control"
+      ]
+    },
+    {
+      "question": "What is a Git branch?",
+      "options": [
+        "A complete operating system",
+        "A type of password",
+        "A movable reference to a commit",
+        "A required remote server"
+      ],
+      "answer": 2,
+      "explanation": "Branches are references that advance as commits are added.",
+      "tags": [
+        "Version control"
+      ]
+    },
+    {
+      "question": "What does git status show?",
+      "options": [
+        "The temperature of the CPU",
+        "All websites visited",
+        "The current network password",
+        "The state of the working tree and staging area"
+      ],
+      "answer": 3,
+      "explanation": "git status reports changed, staged, and untracked files relative to the current commit.",
+      "tags": [
+        "Version control"
+      ]
+    },
+    {
+      "question": "What is a merge conflict?",
+      "options": [
+        "Changes that Git cannot combine automatically",
+        "Every successful commit",
+        "A file being read",
+        "A branch with no changes"
+      ],
+      "answer": 0,
+      "explanation": "Conflicts require deciding how overlapping or incompatible changes should be combined.",
+      "tags": [
+        "Version control"
+      ]
+    },
+    {
+      "question": "Why use a meaningful commit message?",
+      "options": [
+        "To make the code run faster",
+        "To explain the purpose of a change",
+        "To encrypt the repository",
+        "To eliminate all future bugs"
+      ],
+      "answer": 1,
+      "explanation": "A useful commit message gives reviewers and future maintainers context for the change.",
+      "tags": [
+        "Version control"
+      ]
+    }
+  ]
+}

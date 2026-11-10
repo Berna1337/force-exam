@@ -1,4 +1,5 @@
 type RawQuestion = {
+  tags?: unknown;
   id?: unknown;
   question?: unknown;
   prompt?: unknown;
@@ -41,6 +42,7 @@ export type ExamQuestion = {
   prompt: string;
   images: ExamImage[];
   options: ExamOption[];
+  tags?: string[];
   answerIndex: number;
   explanation?: string;
 };
@@ -251,6 +253,7 @@ export function normalizeExam(value: unknown): Exam {
     }
 
     return {
+      ...(Array.isArray((item as RawQuestion).tags) ? { tags: Array.from(new Set(((item as RawQuestion).tags as unknown[]).filter((tag): tag is string => typeof tag === "string").map(tag => tag.trim().slice(0, 60)).filter(Boolean))).slice(0, 20) } : {}),
       id: `question-${index}`,
       sourceId: getOptionalText(rawQuestion.id),
       prompt: prompt.trim(),
@@ -271,7 +274,7 @@ export function normalizeExam(value: unknown): Exam {
 
 // Identity supports comparisons; adding IDs to legacy files does not change a quiz.
 export function questionContent(exam: Exam) {
-  return exam.questions.map(({ id, sourceId, options, ...question }) => ({
+  return exam.questions.map(({ id, sourceId, tags, options, ...question }) => ({
     ...question, options: options.map(({ sourceId: optionId, ...option }) => option),
   }));
 }

@@ -8,7 +8,7 @@ app.setPath('userData', path.join(app.getPath('temp'), `force-exam-smoke-${proce
 const timeout = setTimeout(() => {
   console.error('Desktop smoke test timed out');
   app.exit(1);
-}, 60000);
+}, 120000);
 const loadedWindow = new Promise((resolve) => {
   app.once('browser-window-created', (_event, window) => {
     window.webContents.once('did-finish-load', () => resolve(window));
@@ -54,6 +54,8 @@ app.whenReady().then(async () => {
     callback({ cancel: true });
   });
   const window = await loadedWindow;
+  window.webContents.setBackgroundThrottling(false);
+  window.focus(); window.webContents.focus();
   // Exercise Electron's real network stack, including redirects, without internet access.
   const imageServer = require('node:http').createServer((request, response) => {
     if (request.url === '/redirect') { response.writeHead(302, { location: '/image.png' }); response.end(); }
@@ -78,14 +80,25 @@ app.whenReady().then(async () => {
     throw new Error(`Timed out waiting for: ${source}`);
   };
   const click = async (text) => {
+    if (['Versions', 'Edit exam', 'Delete exam', 'Export JSON', 'Score history'].includes(text)) {
+      await run(`(() => { const details = Array.from(document.querySelectorAll('details[data-exam-tools]')).find(el => el.getClientRects().length); if (details && !details.open) details.querySelector('summary').click(); })()`);
+    }
     const source = `Array.from(document.querySelectorAll('button')).find(b => b.getClientRects().length && getComputedStyle(b).visibility !== 'hidden' && b.textContent.trim() === ${JSON.stringify(text)})`;
     await waitFor(`!!(${source})`);
     await run(`${source}.click()`);
+  };
+  const markQuestion = async (number, marked = true) => {
+    const label = `${marked ? 'Mark' : 'Unmark'} question ${number} for review`;
+    const source = `Array.from(document.querySelectorAll('button')).find(button => button.getClientRects().length && button.getAttribute('aria-label') === ${JSON.stringify(label)})`;
+    await waitFor(`!!(${source})`); await run(`${source}.click()`);
   };
   const submitImport = async () => {
     await run(`document.querySelector('main button[aria-label="Import exam file"]').click()`);
   };
   const fill = async (label, value) => {
+    if (['Questions per attempt', 'Time limit minutes', 'Passing score'].includes(label)) {
+      await run(`(() => { const details = Array.from(document.querySelectorAll('details[data-session-options]')).find(el => el.getClientRects().length); if (details && !details.open) details.querySelector('summary').click(); })()`);
+    }
     const selector = `[aria-label=${JSON.stringify(label)}]`;
     await run(`(() => {
       const input = document.querySelector(${JSON.stringify(selector)});
@@ -117,7 +130,7 @@ app.whenReady().then(async () => {
   }
   assert.equal(window.isVisible(), true, 'Desktop startup must show a window');
   window.setSize(1200, 850);
-  await waitFor('document.body.textContent.includes("A little focus. A lot of progress.")');
+  await waitFor('Array.from(document.querySelectorAll("h2")).some(el => el.textContent === "Workspace")');
   await waitFor('document.documentElement.dataset.theme === "dark"');
   const screenshot = async (name) => {
     if (!process.env.FORCE_EXAM_SCREENSHOT_DIR) return;
@@ -126,6 +139,38 @@ app.whenReady().then(async () => {
     await fs.writeFile(path.join(process.env.FORCE_EXAM_SCREENSHOT_DIR, name), image.toPNG());
   };
   await screenshot('workspace-home.png');
+  // Preferences apply immediately, survive a restart, and the profile entry is hidden.
+  const openTool = async label => run(`document.querySelector(\'[aria-label="Workspace tools"] button[aria-label="${label}"]').click()`);
+  assert.equal(await run('!!document.querySelector(\'[aria-label="Open archive"]\')'), false);
+  await openTool('Settings');
+  await waitFor('!!document.querySelector(\'[aria-label="App settings"]\')');
+  const setPreference = async (id, value) => run(`(() => { const input = document.getElementById('${id}'); input.value = '${value}'; input.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  for (const [theme, background] of [['daylight', 'rgb(243, 246, 251)'], ['paper', 'rgb(247, 243, 235)'], ['latte', 'rgb(239, 241, 245)']]) {
+    await setPreference('workspace-theme', theme);
+    await waitFor(`document.documentElement.dataset.workspaceTheme === '${theme}' && document.body.classList.contains('chakra-ui-light')`);
+    assert.equal(await run('getComputedStyle(document.body).backgroundColor'), background);
+    assert.equal(await run('getComputedStyle(document.body).colorScheme'), 'light');
+    assert.equal(await run(`(() => {
+      const text = document.querySelector('[aria-label="App settings"] p');
+      const rgb = getComputedStyle(text).color.match(/[0-9.]+/g).slice(0, 3).map(Number);
+      return Math.max(...rgb) < 180;
+    })()`), true, 'Light theme text must use a dark foreground');
+  }
+  await setPreference('workspace-theme', 'midnight'); await setPreference('accent-color', 'teal'); await setPreference('text-size', 'large');
+  await run('document.getElementById("reduce-motion").click()');
+  await waitFor('document.documentElement.dataset.workspaceTheme === "midnight" && document.documentElement.dataset.accent === "teal" && document.documentElement.dataset.reducedMotion === "true"');
+  assert.equal(await run('getComputedStyle(document.documentElement).fontSize'), '18px');
+  assert.equal(await run('getComputedStyle(document.querySelector("main").parentElement.parentElement).backgroundColor'), 'rgb(23, 29, 43)');
+  await screenshot('workspace-settings.png');
+  await new Promise(resolve => { window.webContents.once('did-finish-load', resolve); window.reload(); });
+  await waitFor('document.documentElement.dataset.workspaceTheme === "midnight" && document.documentElement.dataset.accent === "teal"');
+  assert.equal(await run('getComputedStyle(document.documentElement).fontSize'), '18px');
+  await openTool('Settings');
+  await click('Backup and restore'); await waitFor('!!document.querySelector(\'[role="dialog"]\')'); await click('Close');
+  await openTool('Settings'); await click('Reset appearance');
+  await waitFor('document.documentElement.dataset.workspaceTheme === "graphite" && document.documentElement.dataset.accent === "violet" && document.documentElement.dataset.reducedMotion === "false"');
+  await click('Backup and restore'); await waitFor('!!document.querySelector(\'[role="dialog"]\')'); await click('Close');
+  await click('Workspace');
   assert.equal(await run('getComputedStyle(document.querySelector(".app-titlebar")).getPropertyValue("-webkit-app-region")'), 'drag');
   assert.equal(await run('getComputedStyle(document.querySelector(\'[aria-label="Help and instructions"]\')).getPropertyValue("-webkit-app-region")'), 'no-drag');
   if (process.platform !== 'darwin') {
@@ -150,6 +195,8 @@ app.whenReady().then(async () => {
   await waitFor('!document.querySelector(\'[role="dialog"]\')');
   await run('window.dispatchEvent(new KeyboardEvent("keydown", { key: "F1", bubbles: true, cancelable: true }))');
   await waitFor('!!document.querySelector(\'[role="dialog"]\')');
+  window.focus(); window.webContents.focus();
+  await waitFor('document.querySelector(\'[role="dialog"]\').contains(document.activeElement)');
   window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
   window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
   await waitFor('!document.querySelector(\'[role="dialog"]\')');
@@ -173,17 +220,30 @@ app.whenReady().then(async () => {
   const importedWithoutSession = await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0]');
   assert.equal(importedWithoutSession.progress, undefined, 'Importing does not create a practice session');
   assert.deepEqual(importedWithoutSession.attempts, []);
+  await fill('Passing score', '20');
   assert.equal(await run('Array.from(document.querySelectorAll(\'[role="radiogroup"][aria-label^="Question "]\')).some(el => el.getClientRects().length)'), false);
   await enterStudy();
   await waitFor('document.body.textContent.includes("Which field contains")');
   await waitFor('document.images.length > 0 && Array.from(document.images).every(i => i.complete && i.naturalWidth > 0)');
   await run('document.querySelectorAll(\'[role="radio"]\')[2].click()');
   await waitFor('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.answers["question-0"] === 2');
+  const beforeWorkspaceResume = await run('localStorage.getItem("force-exam-library-v1")');
+  await run(`document.querySelector('[aria-label="Workspace tools"] [aria-label="Workspace"]').click()`);
+  await waitFor(`!!document.querySelector('section[aria-label="Continue studying"]')`);
+  assert.equal(await run(`document.querySelector('section[aria-label="Continue studying"]').textContent.includes('1/5 answered')`), true);
+  await run(`document.querySelector('section[aria-label="Continue studying"] button').click()`);
+  await waitFor(`!!Array.from(document.querySelectorAll('[role="radiogroup"][aria-label^="Question "]')).find(el => el.getClientRects().length)`);
+  assert.equal(await run('localStorage.getItem("force-exam-library-v1")'), beforeWorkspaceResume, 'Workspace resume preserves the saved attempt');
+  await markQuestion(1);
+  await waitFor('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions.includes("question-0")');
   assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.questionOrder'), ['question-0', 'question-1', 'question-2', 'question-3', 'question-4']);
   await click('Next');
   await waitFor('document.body.textContent.includes("What can the answer field contain")');
   await click('Next');
   await waitFor('document.images.length > 0 && Array.from(document.images).every(i => i.complete && i.naturalWidth > 0)');
+  await markQuestion(3);
+  await waitFor('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions.length === 2');
+  assert.equal(await run('document.querySelector(\'[aria-label="Go to question 1"]\').getAttribute("aria-description")'), 'Marked for review');
   await returnAndResume();
   await click('Workspace');
   await waitFor('document.body.textContent.includes("EXAM LIBRARY")');
@@ -204,6 +264,7 @@ app.whenReady().then(async () => {
   await reopen();
   await waitFor('document.querySelector("main").innerText.includes("Question 3 of 5")');
   assert.equal(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.answers["question-0"]'), 2);
+  assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions'), ['question-0', 'question-2']);
   await screenshot('workspace-practice.png');
   await run('document.querySelector(\'[aria-label="Hide sidebar"]\').click()');
   await waitFor('!document.querySelector(\'[aria-label="Exam library"]\')');
@@ -215,10 +276,35 @@ app.whenReady().then(async () => {
   await waitFor('document.body.textContent.includes("Review")');
   await waitFor('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].attempts.length === 1');
   assert.equal(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].attempts[0].score'), 1);
+  await waitFor(`(() => {
+    const canvas = document.querySelector('canvas.passing-confetti');
+    if (!canvas || !canvas.width || !canvas.height) return false;
+    const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+    return pixels.some((value, index) => index % 4 === 3 && value > 0);
+  })()`);
+  assert.equal(await run(`(() => {
+    const canvas = document.querySelector('canvas.passing-confetti');
+    const rect = canvas.getBoundingClientRect();
+    return !canvas.closest('.completion-card') && rect.width === innerWidth && rect.height === innerHeight && getComputedStyle(canvas).pointerEvents === 'none';
+  })()`), true, 'Confetti must draw over the entire app without blocking input');
+  const scoresBeforeFlags = await run('JSON.stringify(JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].attempts)');
+  await click('Show marked only');
+  assert.deepEqual(await run('Array.from(document.querySelectorAll(\'[aria-label^="Review question "]\')).filter(item => item.getClientRects().length).map(item => item.getAttribute("aria-label"))'), ['Review question 1', 'Review question 3']);
+  await markQuestion(3, false);
+  await waitFor('!Array.from(document.querySelectorAll(\'[aria-label="Review question 3"]\')).some(item => item.getClientRects().length)');
+  await markQuestion(1, false);
+  await waitFor('document.querySelector("main").innerText.includes("No questions marked for review.")');
+  await click('Show all questions');
+  await markQuestion(2);
+  await waitFor('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions.includes("question-1")');
+  assert.equal(await run('JSON.stringify(JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].attempts)'), scoresBeforeFlags, 'Review flags must not change completed scores');
+  await screenshot('workspace-marked-review.png');
   const saved = await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))');
   assert.ok(saved.some(exam => exam.title === 'Force Exam schema sample'));
   await reopen();
   await waitFor('document.querySelector("main").innerText.includes("1 / 5 correct")');
+  assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions'), ['question-1']);
+  assert.equal(await run('document.querySelector(\'[aria-label="Unmark question 2 for review"]\').getAttribute("aria-pressed")'), 'true');
   assert.equal(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].attempts.length'), 1);
   await click('Score history');
   await waitFor('document.querySelector(\'[aria-label="Score history"]\')?.innerText.includes("20%")');
@@ -226,6 +312,7 @@ app.whenReady().then(async () => {
   await click('Retake');
   await waitFor('document.querySelector("main").innerText.includes("Question 1 of 5")');
   assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.answers'), {});
+  assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions'), [], 'A retake clears review flags');
   await click('Finish');
   await waitFor('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].attempts.length === 2');
   // Reimporting the same file opens the existing overview, keeping its history and session.
@@ -281,10 +368,14 @@ app.whenReady().then(async () => {
     await waitFor(`JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].gitCommit === ${JSON.stringify(version.oid)}`);
     await enterStudy();
   };
+  await markQuestion(1);
+  await waitFor('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions.includes("question-0")');
   await switchTo(oldVersion);
+  assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions'), [], 'Flags are scoped to their exam version');
   await waitFor('document.querySelector("main").innerText.includes("0 / 5 correct")');
   await switchTo(newVersion);
   await waitFor('document.querySelector("main").innerText.includes("This question was updated")');
+  assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions'), ['question-0']);
   await run('document.querySelectorAll(\'[role="radio"]\')[0].click()');
   await click('Next');
   await switchTo(oldVersion);
@@ -398,6 +489,8 @@ app.whenReady().then(async () => {
   assert.ok(downloadedImages.includes('https://images.example.test/save.png'), 'Saving embeds any remaining image links');
   await enterStudy();
   await waitFor('document.querySelector("main").innerText.includes("Which number is one?")');
+  await markQuestion(1);
+  await waitFor('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions.includes("question-0")');
   assert.equal(await run('Array.from(document.querySelectorAll("main button")).some(button => button.getClientRects().length && button.textContent.trim() === "Import")'), false);
   await run('document.querySelectorAll(\'[role="radio"]\')[0].click()');
   await click('Next');
@@ -419,7 +512,8 @@ app.whenReady().then(async () => {
   assert.equal(exported.questions.length, 2);
   assert.ok(exported.questions[0].images[1].url.startsWith('data:image/png;base64,'));
   assert.ok(exported.questions[0].options[0].images[0].url.startsWith('data:image/png;base64,'));
-  assert.equal('progress' in exported || 'attempts' in exported || 'gitCommit' in exported, false);
+  assert.equal('progress' in exported || 'attempts' in exported || 'gitCommit' in exported || 'flaggedQuestions' in exported, false);
+  assert.ok(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions.includes("question-0")'), 'Export does not clear local review flags');
   // Selecting a mode works from the card padding and description, not just its title.
   for (const mode of ['exam', 'practice']) {
     await run(`(() => {
@@ -443,6 +537,9 @@ app.whenReady().then(async () => {
   await run('Math.random = window.__savedRandom; delete window.__savedRandom');
   const shuffled = await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.questionOrder');
   assert.deepEqual(shuffled, ['question-1', 'question-0']);
+  await markQuestion(1);
+  await waitFor('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions.includes("question-1")');
+  assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions'), ['question-1'], 'Flags follow question identity in shuffled mode');
   await waitFor('document.querySelector("main").innerText.includes("Which number is two?")');
   assert.equal(await run('Array.from(document.querySelectorAll("main button")).some(button => button.getClientRects().length && button.textContent.trim() === "Import")'), false);
   await run('document.querySelectorAll(\'[role="radio"]\')[1].click()');
@@ -454,6 +551,7 @@ app.whenReady().then(async () => {
   await run('Array.from(document.querySelectorAll(\'[aria-label="Exam library"] button\')).find(b => b.textContent.includes("Visual editor exam")).click()');
   await enterStudy();
   assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.questionOrder'), shuffled);
+  assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions'), ['question-1']);
   await waitFor('document.querySelector("main").innerText.includes("Which number is one?")');
   assert.equal(await run('Array.from(document.querySelectorAll("main button")).some(button => button.getClientRects().length && button.textContent.trim() === "Import")'), false);
   await run('document.querySelectorAll(\'[role="radio"]\')[0].click()');
@@ -461,6 +559,11 @@ app.whenReady().then(async () => {
   await waitFor('document.querySelector("main").innerText.includes("2 / 2 correct")');
   const modeScores = await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].attempts');
   assert.deepEqual(modeScores.map(attempt => attempt.mode), ['exam', 'practice']);
+  await click('Show marked only');
+  assert.deepEqual(await run('Array.from(document.querySelectorAll(\'[aria-label^="Review question "]\')).filter(item => item.getClientRects().length).map(item => item.getAttribute("aria-label"))'), ['Review question 1']);
+  await markQuestion(1, false); await click('Show all questions'); await markQuestion(2);
+  await waitFor('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions.includes("question-0")');
+  assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].attempts'), modeScores);
   await click('Score history');
   await waitFor('Array.from(document.querySelectorAll(\'[aria-label="Score history"]\')).some(el => el.getClientRects().length && el.textContent.includes("Exam Mode") && el.textContent.includes("Practice Mode"))');
   assert.equal(await run('document.querySelector("main").scrollWidth <= document.querySelector("main").clientWidth'), true, 'Exam actions must fit narrow windows');
@@ -472,6 +575,7 @@ app.whenReady().then(async () => {
   await run('Math.random = window.__savedRandom; delete window.__savedRandom');
   assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.questionOrder'), ['question-0', 'question-1']);
   assert.equal(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.mode'), 'exam');
+  assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].progress.flaggedQuestions'), []);
   assert.equal(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))[0].attempts.length'), 2);
   assert.ok(downloadedImages.includes('https://images.example.test/question.png'));
   assert.ok(downloadedImages.includes('https://images.example.test/answer.png'));
@@ -559,8 +663,19 @@ app.whenReady().then(async () => {
   assert.equal(await run('Array.from(document.querySelectorAll(\'[aria-label="Exam library"] button\')).some(button => button.textContent.includes("Linked image exam"))'), false);
   await run('document.querySelector(\'[aria-label="Expand folder Courses"]\').click()');
   // Drag the exam to the root, then back into the nested folder.
-  await run(`(() => { const transfer = new DataTransfer(); transfer.setData('application/x-force-exam-exam', ${JSON.stringify(organizedBefore.id)}); document.querySelector('[aria-label="Show library"]').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer })); })()`);
+  const beginSidebarDrag = async () => {
+    await run(`document.querySelector('[aria-label="Exam library"] [draggable="true"]').dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }))`);
+  };
+  assert.equal(await run(`!!document.querySelector('[aria-label="Library root drop area"]')`), false);
+  await beginSidebarDrag();
+  await waitFor(`!!document.querySelector('[aria-label="Library root drop area"]')`);
+  await run(`window.dispatchEvent(new DragEvent('dragend'))`);
+  await waitFor(`!document.querySelector('[aria-label="Library root drop area"]')`);
+  await beginSidebarDrag();
+  await waitFor(`!!document.querySelector('[aria-label="Library root drop area"]')`);
+  await run(`(() => { const transfer = new DataTransfer(); transfer.setData('application/x-force-exam-exam', ${JSON.stringify(organizedBefore.id)}); const target = document.querySelector('[aria-label="Library root drop area"]'); const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer }); target.dispatchEvent(over); if (!over.defaultPrevented) throw new Error('Root must accept dragover'); target.querySelector('p').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer })); })()`);
   await waitFor(`!JSON.parse(localStorage.getItem("force-exam-library-v1")).find(exam => exam.id === ${JSON.stringify(organizedBefore.id)}).folderId`);
+  await waitFor(`!document.querySelector('[aria-label="Library root drop area"]')`);
   await run(`(() => { const transfer = new DataTransfer(); transfer.setData('application/x-force-exam-exam', ${JSON.stringify(organizedBefore.id)}); Array.from(document.querySelectorAll('[aria-label="Exam library"] button')).find(button => button.textContent.trim() === 'Biology revision').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer })); })()`);
   await waitFor(`JSON.parse(localStorage.getItem("force-exam-library-v1")).find(exam => exam.id === ${JSON.stringify(organizedBefore.id)}).folderId === ${JSON.stringify(biology)}`);
   await fill('Filter exams', 'Biology revision');
@@ -660,7 +775,10 @@ app.whenReady().then(async () => {
   await click('Move to folder');
   await run(`(() => { const select = document.querySelector('[aria-label="Destination folder"]'); select.value = ${JSON.stringify(archiveTarget)}; select.dispatchEvent(new Event('change', { bubbles: true })); })()`); await click('Move');
   await waitFor(`JSON.parse(localStorage.getItem("force-exam-library-v1")).find(exam => exam.id === ${JSON.stringify(archivedExam.id)}).folderId === ${JSON.stringify(archiveTarget)}`);
-  await run(`(() => { const transfer = new DataTransfer(); transfer.setData('application/x-force-exam-exam', ${JSON.stringify(archivedExam.id)}); document.querySelector('[aria-label="Show archive"]').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer })); })()`);
+  assert.equal(await run(`!!document.querySelector('[aria-label="Archive root drop area"]')`), false);
+  await beginSidebarDrag();
+  await waitFor(`!!document.querySelector('[aria-label="Archive root drop area"]')`);
+  await run(`(() => { const transfer = new DataTransfer(); transfer.setData('application/x-force-exam-exam', ${JSON.stringify(archivedExam.id)}); const target = document.querySelector('[aria-label="Archive root drop area"]'); const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer }); target.dispatchEvent(over); if (!over.defaultPrevented) throw new Error('Archive root must accept dragover'); target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer })); })()`);
   await waitFor(`!JSON.parse(localStorage.getItem("force-exam-library-v1")).find(exam => exam.id === ${JSON.stringify(archivedExam.id)}).folderId`);
   assert.ok(await run(`JSON.parse(localStorage.getItem("force-exam-library-v1")).find(exam => exam.id === ${JSON.stringify(archivedExam.id)}).archivedAt`));
   // A failed storage write must leave both organization and library unchanged.
@@ -682,9 +800,197 @@ app.whenReady().then(async () => {
   await run('document.querySelector(\'[aria-label="Show archive"]\').click()');
   assert.ok(await run(`JSON.parse(localStorage.getItem("force-exam-folders-v1")).some(folder => folder.id === ${JSON.stringify(archiveImport.id)} && folder.parentId === ${JSON.stringify(archiveTarget)})`));
   await screenshot('workspace-collection-archive.png');
+  // Focused practice keeps the full session intact and scores only the selected questions.
+  await run('document.querySelector(\'[aria-label="Show library"]\').click()');
+  await run('Array.from(document.querySelectorAll(\'[aria-label="Exam library"] button\')).find(button => button.textContent.includes("Visual editor exam")).click()');
+  await enterStudy();
+  await waitFor('document.querySelector("main").innerText.includes("Which number is one?")');
+  await run('Array.from(document.querySelectorAll(\'[role="radio"]\')).filter(item => item.getClientRects().length)[0].click()');
+  await markQuestion(1); await click('Next');
+  await run('Array.from(document.querySelectorAll(\'[role="radio"]\')).filter(item => item.getClientRects().length)[0].click()');
+  await click('Finish');
+  await waitFor('document.querySelector("main").innerText.includes("1 / 2 correct")');
+  const fullBeforeFocus = await run('JSON.parse(localStorage.getItem("force-exam-library-v1")).find(exam => exam.title === "Visual editor exam")');
+  await click('Practice missed questions (1)');
+  await waitFor('document.querySelector("main").innerText.includes("Question 1 of 1")');
+  await waitFor('document.querySelector("main").innerText.includes("Which number is two?")');
+  const focusSource = () => 'JSON.parse(localStorage.getItem("force-exam-library-v1")).find(exam => exam.title === "Visual editor exam")';
+  assert.deepEqual(await run(`${focusSource()}.focusedProgress.focusedQuestionIds`), ['question-1']);
+  assert.deepEqual(await run(`${focusSource()}.progress`), fullBeforeFocus.progress);
+  await run('Array.from(document.querySelectorAll(\'[role="radio"]\')).filter(item => item.getClientRects().length)[1].click()');
+  await click('Back to overview');
+  await waitFor(`${focusSource()}.focusedProgress.answers['question-1'] === 1`);
+  const focusedBeforeRestart = await run(`${focusSource()}.focusedProgress`);
+  await new Promise(resolve => { window.webContents.once('did-finish-load', resolve); window.reload(); });
+  await waitFor('!!document.querySelector(\'[aria-label="Show library"]\')');
+  await run('Array.from(document.querySelectorAll(\'[aria-label="Exam library"] button\')).find(button => button.textContent.includes("Visual editor exam")).click()');
+  await click('Resume focused practice');
+  await waitFor('document.querySelector("main").innerText.includes("Question 1 of 1")');
+  assert.deepEqual(await run(`${focusSource()}.focusedProgress`), focusedBeforeRestart);
+  assert.equal(await run('Array.from(document.querySelectorAll(\'[role="radio"]\')).filter(item => item.getClientRects().length)[1].getAttribute("aria-checked")'), 'true');
+  await click('Finish');
+  await waitFor('document.querySelector("main").innerText.includes("1 / 1 correct")');
+  await click('Score history');
+  await waitFor('Array.from(document.querySelectorAll(\'[aria-label="Score history"]\')).some(item => item.getClientRects().length && item.textContent.includes("Focused practice · Missed"))');
+  const afterMissedFocus = await run(focusSource());
+  assert.equal(afterMissedFocus.attempts[0].focus, 'missed'); assert.equal(afterMissedFocus.attempts[0].total, 1); assert.equal(afterMissedFocus.attempts[0].score, 1);
+  assert.deepEqual(afterMissedFocus.progress, fullBeforeFocus.progress);
+  assert.deepEqual(afterMissedFocus.attempts.filter(attempt => !attempt.focus), fullBeforeFocus.attempts);
+  assert.equal(afterMissedFocus.json, fullBeforeFocus.json); assert.equal(afterMissedFocus.gitCommit, fullBeforeFocus.gitCommit);
+  const missedAgain = await run('Array.from(document.querySelectorAll(\'[aria-label="Focused practice"] button\')).find(button => button.getClientRects().length && button.textContent.startsWith("Practice missed questions"))?.disabled');
+  assert.equal(missedAgain, true, 'A correct focused result must not include unasked questions as missed');
+  await screenshot('workspace-focused-result.png');
+  await click('Go to overview');
+  await click('Practice marked questions (1)');
+  await waitFor('document.querySelector("main").innerText.includes("Which number is one?")');
+  assert.deepEqual(await run(`${focusSource()}.focusedProgress.focusedQuestionIds`), ['question-0']);
+  await run('Array.from(document.querySelectorAll(\'[role="radio"]\')).filter(item => item.getClientRects().length)[1].click()');
+  await markQuestion(1); await click('Finish');
+  await waitFor('document.querySelector("main").innerText.includes("0 / 1 correct")');
+  assert.equal(await run(`${focusSource()}.attempts[0].focus`), 'marked');
+  assert.deepEqual(await run(`${focusSource()}.progress`), fullBeforeFocus.progress);
+  await click('Practice missed questions (1)');
+  await waitFor('document.querySelector("main").innerText.includes("Question 1 of 1")');
+  assert.deepEqual(await run(`${focusSource()}.focusedProgress.focusedQuestionIds`), ['question-0']);
+  assert.deepEqual(await run(`${focusSource()}.focusedProgress.answers`), {});
+  await screenshot('workspace-focused-practice.png');
+  await click('Back to overview');
+  // Full-run statistics must retain their pre-focus values, and full review remains accessible.
+  assert.equal(await run(`Array.from(document.querySelectorAll('[aria-label="Exam overview"]')).find(item => item.getClientRects().length).textContent.includes('Latest score: 1/2 (50%)')`), true);
+  await enterStudy();
+  await waitFor('document.querySelector("main").innerText.includes("1 / 2 correct")');
+  assert.deepEqual(await run(`${focusSource()}.progress`), fullBeforeFocus.progress);
+  // Tagging alone keeps the full result and creates a topic-aware snapshot.
+  await click('Go to overview');
+  const beforeTopics = await run(focusSource());
+  await click('Edit exam'); await waitFor('!!document.querySelector(\'[aria-label="Question topics"]\')');
+  await fill('Question topics', 'Science, Cells');
+  await run('Array.from(document.querySelectorAll(\'[aria-label="Editor questions"] button\')).find(button => button.textContent.startsWith("2.")).click()');
+  await fill('Question topics', 'Math'); await click('Save exam');
+  await waitFor('!document.querySelector(\'[aria-label="Exam editor"]\')');
+  assert.equal(await run(`${focusSource()}.revision`), beforeTopics.revision);
+  assert.deepEqual(await run(`${focusSource()}.progress`), beforeTopics.progress);
+  assert.deepEqual(await run(`JSON.parse(${focusSource()}.json).questions[0].tags`), ['Science', 'Cells']);
+  const chooseMode = async mode => run(`Array.from(document.querySelectorAll('[aria-label="Run mode"] input[value="${mode}"]')).find(input => input.closest('label').getClientRects().length).click()`);
+  const chooseTopic = async topic => run(`(() => { const select = Array.from(document.querySelectorAll('[aria-label="Practice topic"]')).find(select => select.getClientRects().length); select.value = ${JSON.stringify(topic)}; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await chooseMode('practice');
+  await fill('Questions per attempt', '1'); await chooseTopic('Cells');
+  await run('Array.from(document.querySelectorAll(\'[aria-label="Exam overview"] input[type="checkbox"]\')).find(input => input.closest("label").getClientRects().length).click()');
+  await click('Start new attempt');
+  await waitFor('document.querySelector("main").innerText.includes("Question 1 of 1")');
+  await run('document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "1", bubbles: true, cancelable: true }))');
+  await waitFor('document.querySelector("main").innerText.includes("Your answer is locked after feedback is shown")');
+  await run('document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "2", bubbles: true, cancelable: true }))');
+  assert.equal(await run(`${focusSource()}.progress.answers['question-0']`), 0);
+  await run('document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "f", bubbles: true, cancelable: true }))');
+  await waitFor(`${focusSource()}.progress.flaggedQuestions.includes('question-0')`);
+  const poolSnapshot = await run(`${focusSource()}.progress`);
+  await click('Back to overview');
+  await new Promise(resolve => { window.webContents.once('did-finish-load', resolve); window.reload(); });
+  await waitFor('!!document.querySelector(\'[aria-label="Show library"]\')');
+  await run('Array.from(document.querySelectorAll(\'[aria-label="Exam library"] button\')).find(button => button.textContent.includes("Visual editor exam")).click()');
+  await enterStudy();
+  assert.deepEqual(await run(`${focusSource()}.progress`), poolSnapshot);
+  await run('document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "2", bubbles: true, cancelable: true }))');
+  assert.equal(await run(`${focusSource()}.progress.answers['question-0']`), 0);
+  await click('Finish');
+  await waitFor(`${focusSource()}.attempts[0].pool === true`);
+  assert.equal(await run('Array.from(document.querySelectorAll(\'[aria-label="Focused practice"] button\')).find(button => button.getClientRects().length && button.textContent.startsWith("Practice missed questions")).disabled'), true, 'Unasked bank questions are not missed');
+  assert.equal(await run(`${focusSource()}.attempts[0].feedback`), true);
+  assert.deepEqual(await run(`${focusSource()}.attempts[0].topics`), { Science: { correct: 1, total: 1 }, Cells: { correct: 1, total: 1 } });
+  await click('Go to overview');
+  // A timer keeps its absolute deadline when navigating away and expires exactly once.
+  await chooseMode('exam'); await fill('Questions per attempt', '0'); await chooseTopic(''); await fill('Time limit minutes', '1');
+  await click('Start new attempt');
+  await waitFor('!!document.querySelector(\'[role="timer"]\')');
+  const deadline = await run(`${focusSource()}.progress.deadlineAt`);
+  assert.ok(deadline > Date.now());
+  await run('document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))');
+  await waitFor(`${focusSource()}.progress.currentIndex === 1`);
+  await run('document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }))');
+  await waitFor(`${focusSource()}.progress.currentIndex === 0`);
+  await click('Back to overview'); await enterStudy();
+  assert.equal(await run(`${focusSource()}.progress.deadlineAt`), deadline);
+  const attemptsBeforeTimer = await run(`${focusSource()}.attempts.length`);
+  await run('window.restoreClock = Date.now; Date.now = () => window.restoreClock() + 120000; void 0');
+  await waitFor(`${focusSource()}.progress.isReviewing === true`);
+  await run('Date.now = window.restoreClock; delete window.restoreClock; void 0');
+  assert.equal(await run(`${focusSource()}.attempts.length`), attemptsBeforeTimer + 1);
+  assert.equal(await run(`${focusSource()}.attempts[0].timedOut`), true);
+  assert.equal(await run(`${focusSource()}.attempts[0].pool`), undefined);
+  await screenshot('workspace-timed-result.png');
+  await click('Go to overview'); await chooseMode('exam'); await fill('Time limit minutes', '1'); await click('Start new attempt');
+  await waitFor('!!document.querySelector(\'[role="timer"]\')');
+  await run(`(() => { const library = JSON.parse(localStorage.getItem('force-exam-library-v1')); const exam = library.find(exam => exam.title === 'Visual editor exam'); exam.progress.deadlineAt = Date.now() - 1000; localStorage.setItem('force-exam-library-v1', JSON.stringify(library)); })()`);
+  const beforeExpiredResume = await run(`${focusSource()}.attempts.length`);
+  await new Promise(resolve => { window.webContents.once('did-finish-load', resolve); window.reload(); });
+  await waitFor('!!document.querySelector(\'[aria-label="Show library"]\')');
+  await run('Array.from(document.querySelectorAll(\'[aria-label="Exam library"] button\')).find(button => button.textContent.includes("Visual editor exam")).click()');
+  await enterStudy(); await waitFor(`${focusSource()}.attempts.length === ${beforeExpiredResume + 1}`);
+  assert.equal(await run(`${focusSource()}.attempts[0].timedOut`), true);
+  // Dashboard filters separate full, focused, and pool runs; topic data is visible.
+  await click('Workspace'); await openTool('Progress dashboard');
+  await waitFor('!!document.querySelector(\'main [aria-label="Progress dashboard"]\')');
+  await run(`(() => { const select = document.querySelector('[aria-label="Dashboard scope"]'); select.value = 'pool'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await waitFor('document.querySelector(\'main [aria-label="Progress dashboard"]\').textContent.includes("Cells")');
+  assert.ok(await run('!!document.querySelector(\'svg[aria-label="Score trend from zero to one hundred percent"]\')'));
+  await screenshot('workspace-progress-dashboard.png');
+  // Complete backups keep scores, drafts, folders and exact Git hashes, with replacement preview.
+  await run(`localStorage.setItem('force-exam-editor-new', JSON.stringify({ sourceJson: null, draft: { title: 'Backup draft', description: '', questions: [{ id: 'draft-q', prompt: 'Saved draft', images: [], options: [{ id: 'a', text: 'Yes', images: [] }, { id: 'b', text: 'No', images: [] }], answerIndex: 0, explanation: '' }] } }))`);
+  const backupPath = path.join(app.getPath('userData'), 'library-backup.json');
+  dialog.showSaveDialog = async () => ({ canceled: false, filePath: backupPath });
+  await click('File'); await run('Array.from(document.querySelectorAll(\'[role="menuitem"]\')).find(item => item.textContent === "Backup and restore").click()');
+  await click('Create library backup');
+  for (let i = 0; i < 100; i++) { try { JSON.parse(await fs.readFile(backupPath, 'utf8')); break; } catch { await new Promise(resolve => setTimeout(resolve, 50)); } }
+  const backupData = JSON.parse(await fs.readFile(backupPath, 'utf8'));
+  dialog.showSaveDialog = originalSaveDialog;
+  assert.equal(backupData.format, 'force-exam-backup'); assert.ok(backupData.files.length > 0);
+  const backedExams = JSON.parse(backupData.storage['force-exam-library-v1']);
+  assert.equal(JSON.parse(backupData.storage['force-exam-preferences-v1']).theme, 'graphite');
+  const backedVisual = backedExams.find(exam => exam.title === 'Visual editor exam');
+  const historyBeforeBackup = await run(`window.examGit.list(${JSON.stringify(backedVisual.id)})`);
+  await click('Close');
+  await run('Array.from(document.querySelectorAll(\'[aria-label="Exam library"] button\')).find(button => button.textContent.includes("Visual editor exam")).click()');
+  await click('Delete exam'); await click('Delete permanently');
+  await waitFor(`!${focusSource()}`);
+  assert.deepEqual(await run(`window.examGit.list(${JSON.stringify(backedVisual.id)})`), []);
+  await openTool('Settings'); await setPreference('workspace-theme', 'warm');
+  await waitFor('document.documentElement.dataset.workspaceTheme === "warm"');
+  const originalOpenDialog = dialog.showOpenDialog;
+  dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [backupPath] });
+  await click('File'); await run('Array.from(document.querySelectorAll(\'[role="menuitem"]\')).find(item => item.textContent === "Backup and restore").click()');
+  await click('Choose backup to restore');
+  await waitFor('Array.from(document.querySelectorAll("button")).some(button => button.textContent.trim() === "Restore backup")');
+  assert.equal(await run('Array.from(document.querySelectorAll("button")).find(button => button.textContent.trim() === "Restore backup").disabled'), true);
+  await run('document.querySelector(\'[role="dialog"] input[type="checkbox"]\').click()');
+  await click('Restore backup');
+  await waitFor('!document.querySelector(\'[role="dialog"]\')');
+  dialog.showOpenDialog = originalOpenDialog;
+  assert.deepEqual(await run('JSON.parse(localStorage.getItem("force-exam-library-v1"))'), backedExams);
+  assert.equal(await run('localStorage.getItem("force-exam-editor-new")'), backupData.storage['force-exam-editor-new']);
+  assert.deepEqual(await run(`window.examGit.list(${JSON.stringify(backedVisual.id)})`), historyBeforeBackup);
+  assert.equal(await run('localStorage.getItem("force-exam-folders-v1")'), backupData.storage['force-exam-folders-v1']);
+  await waitFor('document.documentElement.dataset.workspaceTheme === "graphite"');
+  await click('Create exam'); await waitFor('document.querySelector(\'[aria-label="Exam title"]\')?.value === "Backup draft"');
+  await click('Close editor');
+  // A one-off quota failure restores the previous private storage and repositories.
+  const storageBeforeFailedRestore = await run('Object.fromEntries(Object.keys(localStorage).filter(key => key.startsWith("force-exam-")).map(key => [key, localStorage.getItem(key)]))');
+  await click('File'); await run('Array.from(document.querySelectorAll(\'[role="menuitem"]\')).find(item => item.textContent === "Backup and restore").click()');
+  dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [backupPath] });
+  await click('Choose backup to restore');
+  await waitFor('!!document.querySelector(\'[role="dialog"] input[type="checkbox"]\')');
+  await run('document.querySelector(\'[role="dialog"] input[type="checkbox"]\').click()');
+  await run(`(() => { const original = Storage.prototype.setItem; let failed = false; window.undoQuotaTest = () => { Storage.prototype.setItem = original; }; Storage.prototype.setItem = function(key, value) { if (!failed && key === 'force-exam-library-v1') { failed = true; throw new DOMException('Quota exceeded', 'QuotaExceededError'); } return original.call(this, key, value); }; })()`);
+  await click('Restore backup');
+  await waitFor('!!document.querySelector(\'[role="dialog"] [role="alert"]\')');
+  await run('window.undoQuotaTest(); delete window.undoQuotaTest');
+  dialog.showOpenDialog = originalOpenDialog;
+  assert.deepEqual(await run('Object.fromEntries(Object.keys(localStorage).filter(key => key.startsWith("force-exam-")).map(key => [key, localStorage.getItem(key)]))'), storageBeforeFailedRestore);
+  assert.deepEqual(await run(`window.examGit.list(${JSON.stringify(backedVisual.id)})`), historyBeforeBackup);
+  await click('Close');
   assert.deepEqual(remoteRequests, []);
   assert.deepEqual(errors, []);
-  console.log('PASS: collection export/import with embedded images, archive moves and failed-import rollback; nested folders, rename/move/drag-and-drop/search, folder and exam archive/restore across restart, content/history/progress preservation, inherited import folder; offline images, Git, modes and scoring.');
+  console.log('PASS: sidebar navigation, appearance persistence/reset, settings backups; complete backup/restore, preserved Git hashes/drafts, timers and expired resume, pool feedback lock, topics/dashboard and shortcuts; focused missed/marked practice, subset scores, separate sessions and restart/resume; question review flags in both modes, review filtering, restart/resume, retake reset and unchanged scores; collection export/import with embedded images, archive moves and failed-import rollback; nested folders, rename/move/drag-and-drop/search, folder and exam archive/restore across restart, content/history/progress preservation, inherited import folder; offline images, Git, modes and scoring.');
   clearTimeout(timeout);
   app.exit(0);
 }).catch((error) => {

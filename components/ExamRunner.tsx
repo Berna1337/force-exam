@@ -1,8 +1,11 @@
 import { normalizeExam, type Exam, type ExamImage, type ExamOption, type ExamQuestion } from "../lib/exam";
+import { cleanSettings, selectPool, secondsRemaining, topicScores, type RunSettings } from "../lib/session";
+import CompletionHero from "./CompletionHero";
+import FocusedPractice from "./FocusedPractice";
 import { makeExamPortable } from "../lib/images";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExamAttempt, ExamProgress } from "../lib/study";
-import { createQuestionOrder, restoreQuestionOrder, modeLabel, runMode, type RunMode } from "../lib/run";
+import { createQuestionOrder, restoreQuestionOrder, restoreReviewFlags, sessionLabel, runMode, type FocusKind, type RunMode } from "../lib/run";
 import {
   Alert,
   AlertIcon,
@@ -17,6 +20,7 @@ import {
   FormLabel,
   Heading,
   HStack,
+  Icon,
   Image,
   Input,
   Progress,
@@ -28,12 +32,13 @@ import {
 } from "@chakra-ui/react";
 import {
   ArrowBackIcon,
+  AttachmentIcon,
+  ArrowForwardIcon,
   CheckCircleIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   ChevronUpIcon,
-  RepeatIcon,
   ViewIcon,
 } from "@chakra-ui/icons";
 
@@ -42,11 +47,20 @@ type ExamRunnerProps = {
   initialJson?: string;
   initialProgress?: ExamProgress;
   initialMode?: RunMode;
+  settings?: RunSettings;
+  isActive?: boolean;
+  initialFocus?: FocusKind;
+  initialFocusedQuestionIds?: string[];
+  onFocused?: (kind: FocusKind, ids: string[]) => void;
   onExamImported: (title: string, json: string, questionCount: number) => Promise<boolean>;
   onProgressChange?: (progress: ExamProgress) => void;
   onAttemptComplete?: (attempt: ExamAttempt) => void;
   onOverview?: () => void;
 };
+
+function ReviewFlagIcon() {
+  return <Icon viewBox="0 0 24 24" boxSize={3.5} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M5 21V3m0 1c5-3 9 3 14 0v10c-5 3-9-3-14 0" /></Icon>;
+}
 
 const sampleExam = {
   title: "Force Exam schema sample",
@@ -199,8 +213,8 @@ function ImageGallery({ images, altPrefix, maxH }: ImageGalleryProps) {
           objectFit="contain"
           borderRadius="md"
           border="1px solid"
-          borderColor="whiteAlpha.300"
-          bg="blackAlpha.300"
+          borderColor="var(--border)"
+          bg="var(--chrome)"
         />
 
         {hasMultipleImages && (
@@ -249,7 +263,7 @@ function ImageGallery({ images, altPrefix, maxH }: ImageGalleryProps) {
       </Box>
 
       {currentImage.description && (
-        <Text color="whiteAlpha.700" fontSize="sm" mt={2}>
+        <Text color="var(--muted)" fontSize="sm" mt={2}>
           {currentImage.description}
         </Text>
       )}
@@ -267,25 +281,25 @@ type ReviewAnswerRowProps = {
 function ReviewAnswerRow({ label, letter, value, tone }: ReviewAnswerRowProps) {
   const toneStyles = {
     neutral: {
-      bg: "whiteAlpha.100",
-      borderColor: "whiteAlpha.300",
-      labelBg: "whiteAlpha.200",
-      letterBg: "whiteAlpha.200",
-      letterColor: "white",
+      bg: "var(--hover)",
+      borderColor: "var(--border)",
+      labelBg: "var(--control-bg)",
+      letterBg: "var(--control-bg)",
+      letterColor: "var(--text)",
     },
     success: {
-      bg: "green.900",
-      borderColor: "green.400",
-      labelBg: "green.500",
-      letterBg: "green.300",
-      letterColor: "gray.900",
+      bg: "var(--success-soft)",
+      borderColor: "var(--success)",
+      labelBg: "var(--success)",
+      letterBg: "var(--success)",
+      letterColor: "var(--on-tone)",
     },
     danger: {
-      bg: "red.900",
-      borderColor: "red.300",
-      labelBg: "red.500",
-      letterBg: "red.200",
-      letterColor: "gray.900",
+      bg: "var(--danger-soft)",
+      borderColor: "var(--danger)",
+      labelBg: "var(--danger)",
+      letterBg: "var(--danger)",
+      letterColor: "var(--on-tone)",
     },
   }[tone];
 
@@ -301,7 +315,7 @@ function ReviewAnswerRow({ label, letter, value, tone }: ReviewAnswerRowProps) {
       px={3}
       py={2}
     >
-      <Badge bg={toneStyles.labelBg} color="white" flexShrink={0}>
+      <Badge bg={toneStyles.labelBg} color={tone === "neutral" ? "var(--text)" : "var(--on-tone)"} flexShrink={0}>
         {label}
       </Badge>
       <HStack spacing={3} align="flex-start">
@@ -320,7 +334,7 @@ function ReviewAnswerRow({ label, letter, value, tone }: ReviewAnswerRowProps) {
             {letter}
           </Box>
         )}
-        <Text color="white" fontWeight="600">
+        <Text color="var(--text)" fontWeight="600">
           {value}
         </Text>
       </HStack>
@@ -328,18 +342,33 @@ function ReviewAnswerRow({ label, letter, value, tone }: ReviewAnswerRowProps) {
   );
 }
 
-export default function ExamRunner({ onBack, initialJson, initialProgress, initialMode = "practice", onExamImported, onProgressChange, onAttemptComplete, onOverview }: ExamRunnerProps) {
+export default function ExamRunner({ onBack, initialJson, initialProgress, initialMode = "practice", settings: initialSettings, isActive = true, initialFocus, initialFocusedQuestionIds, onFocused, onExamImported, onProgressChange, onAttemptComplete, onOverview }: ExamRunnerProps) {
+  const importFileRef = useRef<HTMLInputElement>(null);
+  const [importFileName, setImportFileName] = useState("");
   const [jsonInput, setJsonInput] = useState(initialJson ?? sampleJson);
   const [exam, setExam] = useState<Exam | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
+  const [flaggedQuestions, setFlaggedQuestions] = useState<string[]>([]);
+  const [markedOnly, setMarkedOnly] = useState(false);
   const [error, setError] = useState("");
   const [importing, setImporting] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
+  useEffect(() => {
+    if (!celebrate) return;
+    const timer = window.setTimeout(() => setCelebrate(false), 5500);
+    return () => window.clearTimeout(timer);
+  }, [celebrate]);
   const [isReviewing, setIsReviewing] = useState(false);
   const [collapsedQuizOptionImages, setCollapsedQuizOptionImages] = useState<Record<string, boolean>>({});
   const [expandedReviewImages, setExpandedReviewImages] = useState<Record<string, boolean>>({});
   const [attemptId, setAttemptId] = useState("");
   const [mode, setMode] = useState<RunMode>(initialMode);
+  const [settings] = useState(() => cleanSettings(initialProgress?.settings ?? initialSettings));
+  const [poolQuestionIds, setPoolQuestionIds] = useState<string[] | undefined>();
+  const [deadlineAt, setDeadlineAt] = useState<number>();
+  const [now, setNow] = useState(Date.now);
+  const [revealedQuestions, setRevealedQuestions] = useState<string[]>([]);
   const [questionOrder, setQuestionOrder] = useState<string[]>([]);
   const progressCallback = useRef(onProgressChange);
   progressCallback.current = onProgressChange;
@@ -347,51 +376,69 @@ export default function ExamRunner({ onBack, initialJson, initialProgress, initi
   const lastPersistedProgress = useRef(initialProgress);
   const completedAttempt = useRef<string | null>(null);
 
-  const orderedQuestions = useMemo(() => {
+  const focus = initialFocus;
+  const sessionQuestions = useMemo(() => {
     if (!exam) return [];
-    const byId = new Map(exam.questions.map((question) => [question.id, question]));
-    return questionOrder.length === exam.questions.length ? questionOrder.map((id) => byId.get(id)!) : exam.questions;
-  }, [exam, questionOrder]);
+    return exam.questions.filter(question => focus ? initialFocusedQuestionIds?.includes(question.id) : !poolQuestionIds || poolQuestionIds.includes(question.id));
+  }, [exam, focus, initialFocusedQuestionIds, poolQuestionIds]);
+  const orderedQuestions = useMemo(() => {
+    const byId = new Map(sessionQuestions.map(question => [question.id, question]));
+    return questionOrder.length === sessionQuestions.length && questionOrder.every(id => byId.has(id)) ? questionOrder.map(id => byId.get(id)!) : sessionQuestions;
+  }, [sessionQuestions, questionOrder]);
+  const pool = !focus && !!poolQuestionIds;
+  const feedback = mode === "practice" && !!settings.feedback;
+  const remaining = secondsRemaining(deadlineAt, now);
   const currentQuestion = orderedQuestions[currentIndex];
   const answeredCount = exam ? Object.keys(answers).length : 0;
   const score = useMemo(() => {
     if (!exam) return 0;
-    return exam.questions.reduce((total, question) => {
+    return sessionQuestions.reduce((total, question) => {
       return answers[question.id] === question.answerIndex ? total + 1 : total;
     }, 0);
-  }, [answers, exam]);
+  }, [answers, exam, sessionQuestions]);
 
   useEffect(() => {
     if (!initialJson) return;
     try {
       const restoredExam = normalizeExam(JSON.parse(initialJson));
       const saved = restoredProgress.current;
-      const savedMode = saved ? runMode(saved.mode) : initialMode;
+      const selected = initialFocus ? undefined : saved?.poolQuestionIds ? restoreReviewFlags(restoredExam.questions.map(question => question.id), saved.poolQuestionIds) : settings.questionCount || settings.topic ? selectPool(restoredExam.questions, settings) : undefined;
+      setPoolQuestionIds(selected);
+      const questions = restoredExam.questions.filter(question => initialFocus ? initialFocusedQuestionIds?.includes(question.id) : !selected || selected.includes(question.id));
+      if (!questions.length) throw new Error("This practice set has no available questions.");
+      const savedMode = initialFocus ? "practice" : saved ? runMode(saved.mode) : initialMode;
+      setNow(Date.now());
+      setDeadlineAt(!initialFocus && savedMode === "exam" && settings.durationMinutes ? saved?.deadlineAt ?? Date.now() + settings.durationMinutes * 60000 : undefined);
+      setRevealedQuestions(restoreReviewFlags(questions.map(question => question.id), saved?.revealedQuestions));
       setExam(restoredExam);
       setMode(savedMode);
-      setQuestionOrder(restoreQuestionOrder(restoredExam.questions.map((question) => question.id), savedMode, saved?.questionOrder));
+      setQuestionOrder(restoreQuestionOrder(questions.map((question) => question.id), savedMode, saved?.questionOrder));
       setAttemptId(saved?.attemptId || crypto.randomUUID());
-      setCurrentIndex(Math.max(0, Math.min(saved?.currentIndex ?? 0, restoredExam.questions.length - 1)));
+      setCurrentIndex(Math.max(0, Math.min(saved?.currentIndex ?? 0, questions.length - 1)));
       setAnswers(Object.fromEntries(Object.entries(saved?.answers ?? {}).filter(([id, answer]) => {
-        const question = restoredExam.questions.find((item) => item.id === id);
+        const question = questions.find((item) => item.id === id);
         return question && Number.isInteger(answer) && answer >= 0 && answer < question.options.length;
       })));
       setIsReviewing(saved?.isReviewing ?? false);
+      setFlaggedQuestions(restoreReviewFlags(questions.map(question => question.id), saved?.flaggedQuestions));
+      setMarkedOnly(false);
     } catch {
       setError("This saved exam could not be opened. You can import its JSON again.");
     }
-  }, [initialJson, initialMode]);
+  }, [initialJson, initialMode, initialFocus, initialFocusedQuestionIds, settings]);
 
   const persistProgress = useCallback(() => {
-    if (!exam || !attemptId || questionOrder.length !== exam.questions.length) return;
+    if (!exam || !attemptId || questionOrder.length !== sessionQuestions.length) return;
     const previous = lastPersistedProgress.current;
     if (previous?.attemptId === attemptId && previous.currentIndex === currentIndex && previous.isReviewing === isReviewing &&
-        runMode(previous.mode) === mode && JSON.stringify(previous.questionOrder ?? exam.questions.map((question) => question.id)) === JSON.stringify(questionOrder) &&
-        JSON.stringify(previous.answers) === JSON.stringify(answers)) return;
-    const progress = { attemptId, currentIndex, answers, isReviewing, mode, questionOrder, updatedAt: new Date().toISOString() };
+        runMode(previous.mode) === mode && JSON.stringify(previous.questionOrder ?? sessionQuestions.map((question) => question.id)) === JSON.stringify(questionOrder) &&
+        previous.deadlineAt === deadlineAt && JSON.stringify(previous.revealedQuestions ?? []) === JSON.stringify(revealedQuestions) &&
+        previous.focus === focus && JSON.stringify(previous.focusedQuestionIds ?? []) === JSON.stringify(focus ? initialFocusedQuestionIds : []) &&
+        JSON.stringify(previous.answers) === JSON.stringify(answers) && JSON.stringify(previous.flaggedQuestions ?? []) === JSON.stringify(flaggedQuestions)) return;
+    const progress = { ...(Object.keys(settings).length ? { settings } : {}), ...(pool ? { pool: true, poolQuestionIds } : {}), ...(feedback ? { feedback: true } : {}), ...(deadlineAt ? { deadlineAt } : {}), ...(revealedQuestions.length ? { revealedQuestions } : {}), attemptId, currentIndex, answers, flaggedQuestions, ...(focus ? { focus, focusedQuestionIds: initialFocusedQuestionIds } : {}), isReviewing, mode, questionOrder, updatedAt: new Date().toISOString() };
     lastPersistedProgress.current = progress;
     progressCallback.current?.(progress);
-  }, [exam, attemptId, currentIndex, answers, isReviewing, mode, questionOrder]);
+  }, [exam, sessionQuestions, settings, pool, poolQuestionIds, feedback, deadlineAt, revealedQuestions, focus, initialFocusedQuestionIds, attemptId, currentIndex, answers, flaggedQuestions, isReviewing, mode, questionOrder]);
 
   useEffect(() => { persistProgress(); }, [persistProgress]);
 
@@ -415,113 +462,111 @@ export default function ExamRunner({ onBack, initialJson, initialProgress, initi
   };
 
   const resetExam = () => {
-    if (exam) setQuestionOrder(createQuestionOrder(exam.questions.map((question) => question.id), mode));
+    if (exam) {
+      const selected = !focus && (settings.questionCount || settings.topic) ? selectPool(exam.questions, settings) : undefined;
+      const questions = exam.questions.filter(question => focus ? initialFocusedQuestionIds?.includes(question.id) : !selected || selected.includes(question.id));
+      if (!questions.length) { setError("No questions match these settings anymore. Return to the overview and choose a new topic or pool."); return; }
+      setPoolQuestionIds(selected);
+      setQuestionOrder(createQuestionOrder(questions.map(question => question.id), mode));
+    }
+    setError(""); setRevealedQuestions([]); setNow(Date.now());
+    setDeadlineAt(!focus && mode === "exam" && settings.durationMinutes ? Date.now() + settings.durationMinutes * 60000 : undefined);
     setAttemptId(crypto.randomUUID());
     setCurrentIndex(0);
     setAnswers({});
+    setFlaggedQuestions([]);
+    setMarkedOnly(false);
     setIsReviewing(false);
+    setCelebrate(false);
     setCollapsedQuizOptionImages({});
     setExpandedReviewImages({});
   };
 
-  const finishExam = () => {
-    if (!exam || !attemptId || completedAttempt.current === attemptId || isReviewing) return;
+  const finishExam = useCallback((timedOut = false) => {
+    if (!exam || !orderedQuestions.length || !attemptId || completedAttempt.current === attemptId || isReviewing) return;
     completedAttempt.current = attemptId;
-    onAttemptComplete?.({ id: attemptId, score, total: exam.questions.length, mode, completedAt: new Date().toISOString() });
+    onAttemptComplete?.({ ...(settings.passingScore ? { passingScore: settings.passingScore } : {}), id: attemptId, score, total: orderedQuestions.length, mode, ...(pool ? { pool: true } : {}), ...(feedback ? { feedback: true } : {}), ...(settings.durationMinutes && mode === "exam" ? { durationMinutes: settings.durationMinutes, timedOut: timedOut || secondsRemaining(deadlineAt) === 0 } : {}), topics: topicScores(sessionQuestions, answers), ...(focus ? { focus } : {}), completedAt: new Date().toISOString() });
+    setCelebrate(true);
     setIsReviewing(true);
+  }, [exam, attemptId, isReviewing, score, orderedQuestions.length, deadlineAt, mode, pool, feedback, settings.durationMinutes, settings.passingScore, sessionQuestions, answers, focus, onAttemptComplete]);
+  useEffect(() => {
+    if (!deadlineAt || isReviewing) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [deadlineAt, isReviewing]);
+  useEffect(() => { if (deadlineAt && now >= deadlineAt && exam && attemptId && questionOrder.length === sessionQuestions.length) finishExam(true); }, [deadlineAt, now, exam, attemptId, questionOrder.length, sessionQuestions.length, finishExam]);
+  const chooseAnswer = useCallback((question: ExamQuestion, index: number) => {
+    if (isReviewing || secondsRemaining(deadlineAt) === 0 || feedback && revealedQuestions.includes(question.id)) return;
+    setAnswers(current => ({ ...current, [question.id]: index }));
+    if (feedback) setRevealedQuestions(current => current.includes(question.id) ? current : [...current, question.id]);
+  }, [isReviewing, deadlineAt, feedback, revealedQuestions]);
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (!isActive || !currentQuestion || isReviewing || event.ctrlKey || event.metaKey || event.altKey || document.querySelector('[role="dialog"]')) return;
+      const target = event.target as HTMLElement;
+      if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (/^[1-9]$/.test(event.key) && Number(event.key) <= currentQuestion.options.length) { event.preventDefault(); chooseAnswer(currentQuestion, Number(event.key) - 1); }
+      if (event.key === 'ArrowRight') { event.preventDefault(); setCurrentIndex(index => Math.min(index + 1, orderedQuestions.length - 1)); }
+      if (event.key === 'ArrowLeft') { event.preventDefault(); setCurrentIndex(index => Math.max(index - 1, 0)); }
+      if (event.key.toLowerCase() === 'f' && !event.repeat) { event.preventDefault(); setFlaggedQuestions(current => current.includes(currentQuestion.id) ? current.filter(id => id !== currentQuestion.id) : restoreReviewFlags(sessionQuestions.map(question => question.id), [...current, currentQuestion.id])); }
+    };
+    window.addEventListener('keydown', handler); return () => window.removeEventListener('keydown', handler);
+  }, [isActive, currentQuestion, isReviewing, chooseAnswer, orderedQuestions.length, sessionQuestions]);
+
+  const reviewFlagButton = (question: ExamQuestion, index: number) => {
+    const flagged = flaggedQuestions.includes(question.id);
+    return <Button size="xs" variant="ghost" leftIcon={<ReviewFlagIcon />} color={flagged ? "var(--warning)" : "var(--muted)"} aria-label={`${flagged ? "Unmark" : "Mark"} question ${index + 1} for review`} aria-pressed={flagged}
+      onClick={() => setFlaggedQuestions(current => current.includes(question.id) ? current.filter(id => id !== question.id) : restoreReviewFlags(sessionQuestions.map(item => item.id), [...current, question.id]))}>
+      {flagged ? "Marked for review" : "Mark for review"}
+    </Button>;
   };
 
   if (!exam) {
     return (
-      <Box
-        w="full"
-        bg="transparent"
-        p={0}
-
-
-      >
-        <Stack spacing={5}>
-          <Button
-            leftIcon={<ArrowBackIcon />}
-            variant="outline"
-            colorScheme="purple"
-            onClick={onBack}
-            size="sm"
-            alignSelf="flex-start"
-          >
-            Close tab
-          </Button>
-
-          <Box>
-            <Text color="purple.200" fontFamily="'JetBrains Mono', monospace" fontSize="sm" letterSpacing="0.08em">
-              JSON IMPORT
-            </Text>
-            <Heading color="white" size="lg">
-              Import a Force Exam
-            </Heading>
-            <Text color="whiteAlpha.800" mt={2}>
-              Paste an exam with <Code>title</Code>, <Code>questions</Code>, <Code>options</Code>, and{" "}
-              <Code>answer</Code>. Questions and options can include <Code>imageUrl</Code> or <Code>images</Code>.
-            </Text>
-          </Box>
-
-          {error && (
-            <Alert status="error" bg="red.900" borderRadius="md" color="white">
-              <AlertIcon />
-              {error}
-            </Alert>
-          )}
-
-          <FormControl>
-            <FormLabel color="whiteAlpha.900">Open a JSON exam file</FormLabel>
-            <Input
-              type="file"
-              accept=".json,application/json"
-              p={1}
-              onChange={async (event) => {
-                const input = event.currentTarget;
-                const file = input.files?.[0];
-                if (!file) return;
-                try {
-                  setJsonInput(await file.text());
-                  setError("");
-                } catch {
-                  setError("Could not read this exam file. Try selecting it again.");
-                }
-                input.value = "";
-              }}
-            />
-            <Text color="whiteAlpha.700" fontSize="sm" mt={2}>
-              Linked images download automatically when you start the import, then work offline.
-              An internet connection is needed once for web images. Embedded images work immediately.
-            </Text>
-          </FormControl>
-
-          <FormControl>
-            <FormLabel color="whiteAlpha.900">Exam JSON</FormLabel>
-            <Textarea
-              value={jsonInput}
-              onChange={(event) => setJsonInput(event.target.value)}
-              minH={{ base: "360px", md: "460px" }}
-              fontFamily="'JetBrains Mono', monospace"
-              fontSize="sm"
-              bg="gray.900"
-              borderColor="whiteAlpha.300"
-              color="whiteAlpha.900"
-              _focus={{ borderColor: "purple.300", boxShadow: "0 0 0 1px var(--chakra-colors-cyan-300)" }}
-            />
-          </FormControl>
-
-          <HStack spacing={3} flexWrap="wrap">
-            <Button aria-label="Import exam file" colorScheme="purple" leftIcon={<ViewIcon />} onClick={importExam} isLoading={importing} loadingText="Importing exam and images">
-              Import exam
-            </Button>
-            <Button variant="outline" colorScheme="purple" onClick={() => setJsonInput(sampleJson)}>
-              Load sample
-            </Button>
+      <Stack spacing={6} maxW="860px" mx="auto" aria-label="Import exam">
+        <Box>
+          <HStack justify="space-between" gap={4} mb={3}>
+            <Text color="var(--accent-text)" fontFamily="mono" fontSize="xs" letterSpacing=".12em">YOUR EXAM LIBRARY</Text>
+            <Button leftIcon={<ArrowBackIcon />} variant="ghost" onClick={onBack} size="xs" color="var(--muted)">Close tab</Button>
           </HStack>
-        </Stack>
-      </Box>
+          <Heading size="lg" fontWeight="500">Import exam</Heading>
+          <Text color="var(--muted)" mt={3} fontSize="sm" lineHeight="1.8">Bring an exam into your library. Choose a JSON file or paste its contents below.</Text>
+        </Box>
+
+        {error && <Alert status="error" bg="var(--danger-soft)" border="1px solid var(--danger)" borderRadius="lg" fontSize="sm"><AlertIcon />{error}</Alert>}
+
+        <Box p={{ base: 4, md: 5 }} bg="var(--surface)" border="1px solid var(--border)" borderRadius="xl">
+          <Flex align="center" gap={4} flexWrap="wrap">
+            <Box bg="var(--accent-soft)" color="var(--accent-text)" p={3} borderRadius="lg"><AttachmentIcon boxSize={5} /></Box>
+            <Box flex="1" minW="180px"><Heading size="sm" fontWeight="500">Choose an exam file</Heading><Text mt={2} fontSize="xs" color="var(--muted)" overflowWrap="anywhere">{importFileName || 'Open a .json file from your device to preview it below.'}</Text></Box>
+            <Button size="sm" variant="outline" onClick={() => importFileRef.current?.click()} isDisabled={importing}>Choose JSON file</Button>
+          </Flex>
+          <Input ref={importFileRef} type="file" aria-label="Choose exam JSON file" accept=".json,application/json" display="none" disabled={importing} onChange={async (event) => {
+            const input = event.currentTarget;
+            const file = input.files?.[0];
+            if (!file) return;
+            try { setJsonInput(await file.text()); setImportFileName(file.name); setError(""); }
+            catch { setError("Could not read this exam file. Try selecting it again."); }
+            input.value = "";
+          }} />
+        </Box>
+
+        <Box bg="var(--surface)" border="1px solid var(--border)" borderRadius="xl" overflow="hidden">
+          <HStack px={{ base: 4, md: 5 }} py={4} justify="space-between" borderBottom="1px solid var(--border)">
+            <Box><Heading size="sm" fontWeight="500">Exam contents</Heading><Text fontSize="xs" color="var(--muted)" mt={1}>Preview your file or paste exam JSON here.</Text></Box>
+            <Button size="xs" variant="ghost" isDisabled={importing} onClick={() => { setJsonInput(sampleJson); setImportFileName(""); setError(""); }}>Load sample</Button>
+          </HStack>
+          <Box p={{ base: 4, md: 5 }}>
+            <Textarea aria-label="Exam JSON" value={jsonInput} isDisabled={importing} onChange={event => setJsonInput(event.target.value)} minH={{ base: '280px', md: '360px' }} resize="vertical" fontFamily="mono" fontSize="xs" lineHeight="1.8" p={4} bg="var(--chrome)" borderColor="var(--border)" color="var(--text)" borderRadius="md" spellCheck={false} />
+            <Box as="details" mt={3} color="var(--muted)" fontSize="xs"><Box as="summary" cursor="pointer" py={1}>Supported JSON format</Box><Text mt={2} lineHeight="1.8">Include <Code fontSize="xs">title</Code>, <Code fontSize="xs">questions</Code>, <Code fontSize="xs">options</Code>, and <Code fontSize="xs">answer</Code>. Questions and options also support <Code fontSize="xs">imageUrl</Code> or <Code fontSize="xs">images</Code>.</Text></Box>
+          </Box>
+        </Box>
+
+        <Flex align="center" justify="space-between" gap={4} flexWrap="wrap">
+          <Box flex="1" minW="220px"><Text fontSize="xs" color="var(--muted)" lineHeight="1.8">Saved locally, ready to study offline.</Text><Text fontSize="xs" color="var(--muted)" lineHeight="1.8">Linked images need a connection for their initial download.</Text></Box>
+          <Button className="primary-action" size="sm" aria-label="Import exam file" rightIcon={<ArrowForwardIcon />} onClick={importExam} isLoading={importing} isDisabled={!jsonInput.trim()} loadingText="Importing exam and images">Import exam</Button>
+        </Flex>
+      </Stack>
     );
   }
 
@@ -533,29 +578,18 @@ export default function ExamRunner({ onBack, initialJson, initialProgress, initi
         p={0}
       >
         <Stack spacing={6}>
-          <Flex justify="space-between" align={{ base: "flex-start", md: "center" }} gap={4} direction={{ base: "column", md: "row" }}>
-            <Box>
-              <Badge colorScheme="purple" mb={2}>
-                Review
-              </Badge>
-              <Badge colorScheme="purple" mb={2} ml={2}>{modeLabel(mode)}</Badge>
-              <Heading color="white" size="lg">
-                {score} / {exam.questions.length} correct
-              </Heading>
-              <Text color="whiteAlpha.800">{exam.title}</Text>
-            </Box>
-            <HStack>
-              <Button leftIcon={<RepeatIcon />} colorScheme="purple" onClick={resetExam}>
-                Retake
-              </Button>
-              <Button variant="outline" colorScheme="purple" onClick={returnToOverview}>
-                Go to overview
-              </Button>
-            </HStack>
+          {error && <Alert status="error"><AlertIcon />{error}</Alert>}
+          <CompletionHero passingScore={settings.passingScore} celebrate={celebrate && isActive} score={score} total={orderedQuestions.length} title={exam.title} mode={sessionLabel(mode, focus, pool)} onRetake={resetExam} onOverview={returnToOverview} />
+          {deadlineAt && now >= deadlineAt && <Text role="status" color="var(--warning)">Time expired. Your saved answers were submitted automatically.</Text>}
+          {onFocused && <FocusedPractice json={initialJson ?? "{}"} progress={{ attemptId, currentIndex, answers, flaggedQuestions, isReviewing, updatedAt: "", ...(pool ? { poolQuestionIds } : {}), ...(focus ? { focusedQuestionIds: initialFocusedQuestionIds } : {}) }} onStart={onFocused} />}
+          <Flex align="center" justify="space-between" gap={3} flexWrap="wrap">
+            <HStack color="var(--warning)" fontSize="sm"><ReviewFlagIcon /><Text role="status">{flaggedQuestions.length} marked for review</Text></HStack>
+            <Button size="sm" variant="outline" colorScheme="purple" aria-pressed={markedOnly} onClick={() => setMarkedOnly(current => !current)}>{markedOnly ? "Show all questions" : "Show marked only"}</Button>
           </Flex>
-
+          {markedOnly && !flaggedQuestions.length && <Text color="var(--muted)">No questions marked for review.</Text>}
           <VStack spacing={4} align="stretch">
             {orderedQuestions.map((question, index) => {
+              if (markedOnly && !flaggedQuestions.includes(question.id)) return null;
               const selectedAnswer = answers[question.id];
               const isCorrect = selectedAnswer === question.answerIndex;
               const mediaCount = getQuestionMediaCount(question, selectedAnswer);
@@ -564,13 +598,13 @@ export default function ExamRunner({ onBack, initialJson, initialProgress, initi
               const correctOption = question.options[question.answerIndex];
 
               return (
-                <Box key={question.id} bg="whiteAlpha.100" border="1px solid" borderColor={isCorrect ? "green.300" : "red.300"} borderRadius="lg" p={4}>
-                  <HStack justify="space-between" align="flex-start" mb={3}>
-                    <Text color="white" fontWeight="semibold">
+                <Box key={question.id} aria-label={`Review question ${index + 1}`} bg="var(--hover)" border="1px solid" borderColor={isCorrect ? "var(--success)" : "var(--danger)"} borderRadius="lg" p={4}>
+                  <Flex justify="space-between" align="flex-start" gap={3} flexWrap="wrap" mb={3}>
+                    <Text color="var(--text)" fontWeight="semibold" flex="1" minW="180px">
                       {index + 1}. {question.prompt}
                     </Text>
-                    <Badge colorScheme={isCorrect ? "green" : "red"}>{isCorrect ? "Correct" : "Missed"}</Badge>
-                  </HStack>
+                    <HStack spacing={2}><Badge colorScheme={isCorrect ? "green" : "red"}>{isCorrect ? "Correct" : "Missed"}</Badge>{reviewFlagButton(question, index)}</HStack>
+                  </Flex>
                   <Stack spacing={3}>
                     <ReviewAnswerRow
                       label="Your answer"
@@ -617,7 +651,7 @@ export default function ExamRunner({ onBack, initialJson, initialProgress, initi
 
                             return (
                               <Box key={`${optionIndex}-${imageIndex}`}>
-                                <Text color="whiteAlpha.700" fontSize="sm" mb={2}>
+                                <Text color="var(--muted)" fontSize="sm" mb={2}>
                                   {imageIndex === 0 ? "Your answer image" : "Correct answer image"}
                                 </Text>
                                 <ImageGallery
@@ -631,7 +665,7 @@ export default function ExamRunner({ onBack, initialJson, initialProgress, initi
                         </SimpleGrid>
                       </Stack>
                     </Collapse>
-                    {question.explanation && <Text color="whiteAlpha.800">{question.explanation}</Text>}
+                    {question.explanation && <Text color="var(--muted)">{question.explanation}</Text>}
                   </Stack>
                 </Box>
               );
@@ -651,46 +685,50 @@ export default function ExamRunner({ onBack, initialJson, initialProgress, initi
 
     >
       <Stack spacing={6}>
-        <Button leftIcon={<ArrowBackIcon />} size="sm" variant="ghost" color="#999" alignSelf="flex-start" onClick={returnToOverview}>
+        <Button leftIcon={<ArrowBackIcon />} size="sm" variant="ghost" color="var(--muted)" alignSelf="flex-start" onClick={returnToOverview}>
           Back to overview
         </Button>
         <Flex justify="space-between" align={{ base: "flex-start", md: "center" }} gap={4} direction={{ base: "column", md: "row" }}>
           <Box>
             <Badge colorScheme="purple" mb={2}>
-              {modeLabel(mode)}
+              {sessionLabel(mode, focus, pool)}
             </Badge>
-            <Heading color="white" size="lg">
+            <Heading color="var(--text)" size="lg">
               {exam.title}
             </Heading>
-            {exam.description && <Text color="whiteAlpha.800">{exam.description}</Text>}
+            {exam.description && <Text color="var(--muted)">{exam.description}</Text>}
           </Box>
         </Flex>
 
+        {remaining !== undefined && <Text role="timer" aria-label="Time remaining" color={remaining <= 60 ? "var(--danger)" : "var(--accent-text)"} fontFamily="mono">Time remaining: {Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, "0")}</Text>}
         <Box>
-          <Flex justify="space-between" mb={2} color="whiteAlpha.800">
+          <Flex justify="space-between" mb={2} color="var(--muted)">
             <Text>
-              Question {currentIndex + 1} of {exam.questions.length}
+              Question {currentIndex + 1} of {orderedQuestions.length}
             </Text>
-            <Text>{answeredCount} answered</Text>
+            <HStack spacing={3}><Text>{answeredCount} answered</Text>{flaggedQuestions.length > 0 && <HStack spacing={1} color="var(--warning)"><ReviewFlagIcon /><Text>{flaggedQuestions.length} marked</Text></HStack>}</HStack>
           </Flex>
-          <Progress value={((currentIndex + 1) / exam.questions.length) * 100} colorScheme="purple" borderRadius="full" />
+          <Progress value={(answeredCount / orderedQuestions.length) * 100} colorScheme="teal" borderRadius="full" className="study-progress" aria-label="Questions answered" />
         </Box>
 
         {currentQuestion && (
-          <Box bg="whiteAlpha.100" border="1px solid" borderColor="whiteAlpha.300" borderRadius="lg" p={{ base: 4, md: 6 }}>
+          <Box bg="var(--hover)" border="1px solid" borderColor="var(--border)" borderRadius="lg" p={{ base: 4, md: 6 }}>
             <Stack spacing={6}>
               <Box
-                bg="blackAlpha.300"
+                bg="var(--chrome)"
                 border="1px solid"
-                borderColor="purple.700"
+                borderColor="var(--border)"
                 borderLeftWidth="4px"
                 borderRadius="md"
                 p={{ base: 4, md: 5 }}
               >
-                <Text color="purple.100" fontFamily="'JetBrains Mono', monospace" fontSize="sm" fontWeight="700" mb={3}>
-                  QUESTION {currentIndex + 1}
-                </Text>
-                <Heading color="white" size="md" lineHeight="1.35">
+                <Flex justify="space-between" align="center" gap={3} flexWrap="wrap" mb={3}>
+                  <Text color="var(--accent-text)" fontFamily="'JetBrains Mono', monospace" fontSize="sm" fontWeight="700">
+                    QUESTION {currentIndex + 1}
+                  </Text>
+                  {reviewFlagButton(currentQuestion, currentIndex)}
+                </Flex>
+                <Heading color="var(--text)" size="md" lineHeight="1.35">
                   {currentQuestion.prompt}
                 </Heading>
                 {currentQuestion.images.length > 0 && (
@@ -707,13 +745,13 @@ export default function ExamRunner({ onBack, initialJson, initialProgress, initi
               <Box
                 as="fieldset"
                 border="1px solid"
-                borderColor="whiteAlpha.400"
+                borderColor="var(--border)"
                 borderRadius="md"
                 p={{ base: 3, md: 4 }}
               >
                 <Box
                   as="legend"
-                  color="white"
+                  color="var(--text)"
                   fontSize="sm"
                   fontWeight="700"
                   px={2}
@@ -731,27 +769,28 @@ export default function ExamRunner({ onBack, initialJson, initialProgress, initi
                     return (
                       <Box
                         key={optionImageKey}
+                        className="answer-option"
                         role="radio"
                         aria-checked={isSelected}
                         tabIndex={0}
                         w="full"
                         textAlign="left"
                         border="1px solid"
-                        borderColor={isSelected ? "purple.300" : "whiteAlpha.400"}
+                        borderColor={isSelected ? "var(--accent-text)" : "var(--border)"}
                         borderRadius="md"
-                        bg={isSelected ? "rgba(8, 145, 178, 0.22)" : "rgba(255,255,255,0.04)"}
-                        color="whiteAlpha.900"
+                        bg={isSelected ? "color-mix(in srgb, var(--accent) 14%, transparent)" : "var(--hover)"}
+                        color="var(--text)"
                         px={4}
                         py={3}
                         cursor="pointer"
                         transition="background 0.15s ease, border-color 0.15s ease"
-                        _hover={{ borderColor: "purple.300", bg: isSelected ? "rgba(8, 145, 178, 0.28)" : "whiteAlpha.100" }}
-                        _focusVisible={{ borderColor: "purple.200", boxShadow: "0 0 0 2px var(--chakra-colors-cyan-300)" }}
-                        onClick={() => setAnswers((current) => ({ ...current, [currentQuestion.id]: index }))}
+                        _hover={{ borderColor: "var(--accent-text)", bg: isSelected ? "color-mix(in srgb, var(--accent) 22%, transparent)" : "var(--hover)" }}
+                        _focusVisible={{ borderColor: "var(--accent-text)", boxShadow: "0 0 0 2px var(--chakra-colors-cyan-300)" }}
+                        onClick={() => chooseAnswer(currentQuestion, index)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            setAnswers((current) => ({ ...current, [currentQuestion.id]: index }));
+                            chooseAnswer(currentQuestion, index);
                           }
                         }}
                       >
@@ -761,10 +800,10 @@ export default function ExamRunner({ onBack, initialJson, initialProgress, initi
                             boxSize="28px"
                             mt={option.images.length > 0 ? 1 : 0}
                             border="1px solid"
-                            borderColor={isSelected ? "purple.300" : "whiteAlpha.500"}
+                            borderColor={isSelected ? "var(--accent-text)" : "var(--border)"}
                             borderRadius="full"
-                            bg={isSelected ? "purple.400" : "transparent"}
-                            color={isSelected ? "gray.900" : "whiteAlpha.900"}
+                            bg={isSelected ? "var(--accent-text)" : "transparent"}
+                            color={isSelected ? "var(--on-tone)" : "var(--text)"}
                             flexShrink={0}
                             display="grid"
                             fontSize="sm"
@@ -821,6 +860,7 @@ export default function ExamRunner({ onBack, initialJson, initialProgress, initi
           </Box>
         )}
 
+        {feedback && currentQuestion && revealedQuestions.includes(currentQuestion.id) && <Box role="status" p={4} border="1px solid" borderColor={answers[currentQuestion.id] === currentQuestion.answerIndex ? "var(--success)" : "var(--warning)"} borderRadius="md"><Text fontWeight="600">{answers[currentQuestion.id] === currentQuestion.answerIndex ? "Correct" : `Correct answer: ${getOptionLetter(currentQuestion.answerIndex)}. ${getOptionLabel(currentQuestion.options[currentQuestion.answerIndex], currentQuestion.answerIndex)}`}</Text><ImageGallery images={currentQuestion.options[currentQuestion.answerIndex].images} altPrefix="Correct answer" maxH="180px" />{currentQuestion.explanation && <Text mt={2}>{currentQuestion.explanation}</Text>}<Text fontSize="xs" color="var(--muted)" mt={2}>Your answer is locked after feedback is shown.</Text></Box>}
         <Flex justify="space-between" gap={3} direction={{ base: "column", sm: "row" }}>
           <Button
             variant="outline"
@@ -833,23 +873,24 @@ export default function ExamRunner({ onBack, initialJson, initialProgress, initi
           <HStack>
             <Button
               colorScheme="purple"
-              onClick={() => setCurrentIndex((index) => Math.min(index + 1, exam.questions.length - 1))}
-              isDisabled={currentIndex === exam.questions.length - 1}
+              onClick={() => setCurrentIndex((index) => Math.min(index + 1, orderedQuestions.length - 1))}
+              isDisabled={currentIndex === orderedQuestions.length - 1}
             >
               Next
             </Button>
-            <Button leftIcon={<CheckCircleIcon />} colorScheme="green" onClick={finishExam}>
+            <Button leftIcon={<CheckCircleIcon />} colorScheme="green" onClick={() => finishExam()}>
               Finish
             </Button>
           </HStack>
         </Flex>
 
-        <Divider borderColor="whiteAlpha.300" />
+        <Divider borderColor="var(--border)" />
 
         <SimpleGrid columns={{ base: 4, sm: 6, md: 10 }} spacing={2}>
           {orderedQuestions.map((question, index) => {
             const isCurrent = index === currentIndex;
             const isAnswered = answers[question.id] !== undefined;
+            const isFlagged = flaggedQuestions.includes(question.id);
 
             return (
               <Button
@@ -857,15 +898,18 @@ export default function ExamRunner({ onBack, initialJson, initialProgress, initi
                 size="sm"
                 variant="outline"
                 aria-label={`Go to question ${index + 1}`}
-                bg={isCurrent ? "purple.400" : isAnswered ? "purple.900" : "whiteAlpha.100"}
-                borderColor={isCurrent ? "purple.200" : isAnswered ? "purple.300" : "whiteAlpha.500"}
-                color={isCurrent ? "gray.900" : "white"}
+                aria-description={isFlagged ? "Marked for review" : undefined}
+                title={isFlagged ? `Question ${index + 1} · Marked for review` : `Question ${index + 1}`}
+                rightIcon={isFlagged ? <ReviewFlagIcon /> : undefined}
+                bg={isCurrent ? "var(--accent-text)" : isAnswered ? "var(--accent-soft)" : "var(--hover)"}
+                borderColor={isCurrent ? "var(--accent-text)" : isAnswered ? "var(--accent-text)" : "var(--border)"}
+                color={isCurrent ? "var(--on-tone)" : "var(--text)"}
                 fontWeight="700"
                 _hover={{
-                  bg: isCurrent ? "purple.300" : isAnswered ? "purple.800" : "whiteAlpha.200",
-                  borderColor: "purple.200",
+                  bg: isCurrent ? "var(--accent-text)" : isAnswered ? "var(--accent-soft)" : "var(--control-bg)",
+                  borderColor: "var(--accent-text)",
                 }}
-                _active={{ bg: isCurrent ? "purple.300" : "purple.800" }}
+                _active={{ bg: isCurrent ? "var(--accent-text)" : "var(--accent-soft)" }}
                 onClick={() => setCurrentIndex(index)}
               >
                 {index + 1}

@@ -31,17 +31,17 @@ export default function ExamVersions({ exam, onEnsure, onSwitch, readOnly = fals
     return () => { active = false; };
   }, [exam.id, exam.gitCommit]);
 
-  return <Box role="region" aria-label="Exam versions" mt={4} p={4} bg="#202020" borderRadius="md" border="1px solid #383838">
+  return <Box role="region" aria-label="Exam versions" mt={4} p={4} bg="var(--chrome)" borderRadius="md" border="1px solid var(--border)">
     <HStack justify="space-between" mb={2} flexWrap="wrap"><Text fontSize="sm" fontWeight="500">Git version history</Text><Button size="xs" variant="outline" isDisabled={loading || versions.length < 2} onClick={() => setComparing(true)}>Compare versions</Button></HStack>
-    <Text fontSize="xs" color="#999" lineHeight="1.8" mb={3}>Switch snapshots without deleting newer ones. Each question version keeps its own saved progress and scores. Editing an older snapshot creates a new saved commit.</Text>
-    {readOnly && <Text fontSize="xs" color="#bba984" mb={3}>Restore this exam to switch its selected version. Comparisons are still available in the archive.</Text>}
+    <Text fontSize="xs" color="var(--muted)" lineHeight="1.8" mb={3}>Switch snapshots without deleting newer ones. Each question version keeps its own saved progress and scores. Editing an older snapshot creates a new saved commit.</Text>
+    {readOnly && <Text fontSize="xs" color="var(--warning)" mb={3}>Restore this exam to switch its selected version. Comparisons are still available in the archive.</Text>}
     {loading && <Spinner size="sm" />}
-    {error && <Text role="alert" color="red.300" fontSize="xs" mb={3}>{error}</Text>}
+    {error && <Text role="alert" color="var(--danger)" fontSize="xs" mb={3}>{error}</Text>}
     <Stack spacing={1} maxH="280px" overflowY="auto">
-      {versions.map((version) => <HStack key={version.oid} py={3} gap={3} borderTop="1px solid #333" align="center">
-        <Box flex="1" minW={0}><HStack flexWrap="wrap"><Text fontSize="xs">Version {version.revision}</Text><Text fontFamily="mono" fontSize="10px" color="#a78bfa">{version.oid.slice(0, 7)}</Text>{exam.gitCommit === version.oid && <Badge fontSize="9px" colorScheme="purple">Current</Badge>}</HStack>
-          <Text fontSize="11px" color="#888" mt={1}>{new Date(version.createdAt).toLocaleString()}{version.basedOn ? ` · Based on ${version.basedOn.slice(0, 7)}` : " · Initial snapshot"}</Text>
-          <Text fontSize="xs" mt={1} color="#aaa" noOfLines={1}>{version.message}</Text>
+      {versions.map((version) => <HStack key={version.oid} py={3} gap={3} borderTop="1px solid var(--border)" align="center">
+        <Box flex="1" minW={0}><HStack flexWrap="wrap"><Text fontSize="xs">Version {version.revision}</Text><Text fontFamily="mono" fontSize="10px" color="var(--accent)">{version.oid.slice(0, 7)}</Text>{exam.gitCommit === version.oid && <Badge fontSize="9px" colorScheme="purple">Current</Badge>}</HStack>
+          <Text fontSize="11px" color="var(--muted)" mt={1}>{new Date(version.createdAt).toLocaleString()}{version.basedOn ? ` · Based on ${version.basedOn.slice(0, 7)}` : " · Initial snapshot"}</Text>
+          <Text fontSize="xs" mt={1} color="var(--muted)" noOfLines={1}>{version.message}</Text>
         </Box>
         <Button size="xs" variant="outline" aria-label={`Switch to ${version.oid.slice(0, 7)}`} isDisabled={readOnly || switching || exam.gitCommit === version.oid} onClick={async () => {
           setSwitching(true); setError("");
@@ -51,7 +51,7 @@ export default function ExamVersions({ exam, onEnsure, onSwitch, readOnly = fals
         }}>Switch</Button>
       </HStack>)}
     </Stack>
-    <Text color="#777" fontSize="10px" mt={3}>Snapshots begin when Git tracking is added. Earlier score-only versions may not have saved question content.</Text>
+    <Text color="var(--muted)" fontSize="10px" mt={3}>Snapshots begin when Git tracking is added. Earlier score-only versions may not have saved question content.</Text>
     <ExamComparison examId={exam.id} currentCommit={exam.gitCommit} versions={versions} isOpen={comparing} onClose={() => setComparing(false)} />
   </Box>;
 }
