@@ -41,6 +41,18 @@ jobs:
       - run: npm run build
       - if: runner.os == 'Linux'
         run: xvfb-run --auto-servernum npx electron desktop/smoke.cjs --ozone-platform=x11
+      - name: Check Windows celebration rendering
+        if: runner.os == 'Windows'
+        run: npx electron desktop/confetti-smoke.cjs
+        env:
+          FORCE_EXAM_SCREENSHOT_DIR: confetti-check
+      - name: Upload Windows celebration screenshot
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-confetti-check
+          path: confetti-check/
+          if-no-files-found: ignore
       - run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
