@@ -25,6 +25,21 @@ app.whenReady().then(async () => {
   await wait(`document.body.textContent.includes('Passed — well done!')`);
   const diagnostics = await run(`({ motion: matchMedia('(prefers-reduced-motion: reduce)').matches, appMotion: document.documentElement.dataset.reducedMotion, visibility: document.visibilityState, userAgent: navigator.userAgent })`);
   console.log('Celebration environment:', JSON.stringify(diagnostics));
+  if (diagnostics.motion) {
+    // Windows hosted runners disable animations by default. Verify that policy,
+    // then emulate an animation-enabled desktop to exercise the renderer too.
+    assert.equal(await run(`!!document.querySelector('canvas.passing-confetti')`), false);
+    await wait(`document.body.textContent.includes('disabled by your system animation settings')`);
+    window.webContents.debugger.attach('1.3');
+    await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+    await wait(`!matchMedia('(prefers-reduced-motion: reduce)').matches`);
+    await run(`Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Retake').click()`);
+    await wait(`!!document.querySelector('[role="radiogroup"][aria-label^="Question "] [role="radio"]')`);
+    await run(`document.querySelector('[role="radiogroup"][aria-label^="Question "] [role="radio"]').click()`);
+    await run(`Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Finish').click()`);
+    await wait(`document.body.textContent.includes('Passed — well done!')`);
+    console.log('Verified system motion suppression; testing with animation effects enabled');
+  }
   const pixelCheck = `(() => { const canvas = document.querySelector('canvas.passing-confetti'); if (!canvas || !canvas.width || !canvas.height) return false; return canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data.some((v, i) => i % 4 === 3 && v > 0); })()`;
   try {
     await wait(pixelCheck);

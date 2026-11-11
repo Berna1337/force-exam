@@ -1,4 +1,4 @@
-import { Box, Button, FormControl, FormLabel, Heading, HStack, Input, Select, SimpleGrid, Stack, Switch, Text } from '@chakra-ui/react';
+import { Box, Button, FormControl, FormLabel, Heading, HStack, Input, Select, SimpleGrid, Stack, Switch, Text, useMediaQuery } from '@chakra-ui/react';
 import { usePreferences, type Preferences } from '../contexts/Preferences';
 const themes = [
   { id: 'graphite', name: 'Graphite', background: '#1e1e1e', surface: '#252525', accent: '#b69af6' },
@@ -14,6 +14,7 @@ const themes = [
   { id: 'latte', name: 'Catppuccin Latte', background: '#eff1f5', surface: '#ffffff', accent: '#8839ef' },
 ] as const;
 export default function Settings({ onBackup }: { onBackup: () => void }) {
+  const [systemReducedMotion] = useMediaQuery('(prefers-reduced-motion: reduce)', { ssr: true, fallback: false });
   const { preferences, update, reset, error } = usePreferences();
   return <Stack spacing={7} maxW="760px" mx="auto" aria-label="App settings">
     <Box><Text fontSize="10px" letterSpacing=".12em" color="var(--accent-text)">MAKE IT YOURS</Text><Heading mt={3} size="lg" fontWeight="500">Settings</Heading><Text mt={3} color="var(--muted)" fontSize="sm">A workspace that feels right for you. Changes save on this device.</Text></Box>
@@ -34,6 +35,7 @@ export default function Settings({ onBackup }: { onBackup: () => void }) {
         <FormControl><FormLabel fontSize="sm" htmlFor="text-size">Text size</FormLabel><Select id="text-size" value={preferences.textSize} onChange={e => update({ textSize: e.target.value as Preferences['textSize'] })}><option value="standard">Standard</option><option value="large">Larger</option></Select><Text mt={2} fontSize="xs" color="var(--muted)">Enlarges reading text and controls throughout the app.</Text></FormControl>
       </SimpleGrid>
       <FormControl display="flex" alignItems="center" justifyContent="space-between" gap={4} mt={6}><Box><FormLabel htmlFor="reduce-motion" mb={1} fontSize="sm">Reduce motion</FormLabel><Text fontSize="xs" color="var(--muted)">Skip decorative animations. Your system preference is always respected.</Text></Box><Switch id="reduce-motion" colorScheme="purple" isChecked={preferences.reducedMotion} onChange={e => update({ reducedMotion: e.target.checked })} /></FormControl>
+      {systemReducedMotion && <Text mt={3} fontSize="xs" color="var(--warning)">Your system currently requests reduced motion. Confetti is disabled even when the switch above is off. Enable animation effects in your system accessibility settings to allow celebrations.</Text>}
       <HStack mt={6} justify="space-between" flexWrap="wrap" gap={3}><HStack spacing={2} aria-hidden="true">{['var(--app-bg)', 'var(--surface)', 'var(--accent)'].map(color => <Box key={color} bg={color} w={7} h={7} border="1px solid var(--border)" borderRadius="full" />)}<Text fontSize="xs" color="var(--muted)">Live preview</Text></HStack><Button variant="ghost" size="sm" onClick={reset}>Reset appearance</Button></HStack>
     </Box>
     <Box p={{ base: 4, md: 6 }} bg="var(--surface)" border="1px solid var(--border)" borderRadius="xl"><Heading size="sm">Your data</Heading><Text mt={3} color="var(--muted)" fontSize="sm" lineHeight="1.8">Back up exams, images, scores, saved sessions, folders, versions, drafts, and appearance settings. Restore a backup to continue on another device.</Text><Button mt={4} size="sm" variant="outline" onClick={onBackup}>Backup and restore</Button><Text mt={3} fontSize="xs" color="var(--muted)">Everything stays on this device. Use exam or collection exports to share study material.</Text></Box>
